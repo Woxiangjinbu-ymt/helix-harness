@@ -16,6 +16,10 @@ class DirectoryRequest(Form):
     directory: str = Field(default="", max_length=4096)
 
 
+class FileReference(Form):
+    path: str = Field(min_length=1, max_length=4096)
+
+
 class SessionRequest(Form):
     request_id: UUID | None = None
     directory: str = Field(min_length=1, max_length=4096)
@@ -24,7 +28,16 @@ class SessionRequest(Form):
 
 class TurnRequest(Form):
     submit_request_id: UUID
-    text: str = Field(min_length=1, max_length=131072)
+    text: str = Field(default="", max_length=131072)
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=8)
+    model_profile_id: str | None = Field(default=None, max_length=150)
+    thinking_level: (
+        Literal["default", "off", "on", "low", "medium", "high", "max"] | None
+    ) = None
+    permission_mode: (
+        Literal["default", "acceptEdits", "plan", "bypassPermissions"] | None
+    ) = None
+    skills: list[str] | None = Field(default=None, max_length=100)
 
 
 class ProfileRequest(Form):

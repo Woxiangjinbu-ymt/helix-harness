@@ -1317,9 +1317,9 @@
 .coding-start { margin:auto; width:min(90%,520px); }
 .coding-start h1 { font-size:28px; }
 .coding-start p,.coding-meta, .coding-sessions small, .coding-timeline small { color:var(--text-muted); }
-.coding-shell input:not([type=checkbox]), .coding-shell select, .coding-composer, .coding-permission, .coding-shell button:not(.sidebar-new-btn) { background: var(--bg-surface); color:var(--text-primary); border:1px solid var(--border); border-radius:var(--radius-sm); padding:7px 10px; }
-.coding-shell button:not(.sidebar-new-btn) { display:inline-flex; align-items:center; gap:5px; }
-.coding-shell button[aria-pressed=true], .coding-shell button:hover:not(:disabled) { border-color:var(--border-strong); background:var(--bg-surface-hover); }
+.coding-shell input:not([type=checkbox]), .coding-shell select, .coding-permission, .coding-shell button:not(.sidebar-new-btn):not(:where(.penguin-composer *, .coding-user [data-slot="attachments"] *)) { background: var(--bg-surface); color:var(--text-primary); border:1px solid var(--border); border-radius:var(--radius-sm); padding:7px 10px; }
+.coding-shell button:not(.sidebar-new-btn):not(:where(.penguin-composer *, .coding-user [data-slot="attachments"] *)) { display:inline-flex; align-items:center; gap:5px; }
+.coding-shell button[aria-pressed=true], .coding-shell button:hover:not(:disabled, .penguin-composer *) { border-color:var(--border-strong); background:var(--bg-surface-hover); }
 .coding-start input { display:block; margin:8px 0 14px; }
 .coding-sessions small { display:block; font-size:10px; overflow:hidden; text-overflow:ellipsis; }
 .coding-sessions a span { overflow:hidden; text-overflow:ellipsis; }
@@ -1353,11 +1353,6 @@
 .coding-compose-area { flex: none; margin-bottom: 20px; }
 .coding-compose-area.is-empty { margin-block: auto; }
 .coding-compose-area h1 { margin: 0 0 24px; font-size: clamp(22px, 2.3vw, 30px); text-align: center; font-weight: 550; letter-spacing: -.025em; }
-.coding-shell .coding-composer { display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 10px; margin: 0; border-radius: 22px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
-.coding-composer:focus-within { border-color: var(--border-strong); }
-.coding-composer textarea:focus-visible { outline: none; box-shadow: none; }
-.coding-composer textarea { width: 100%; min-height: 48px; max-height: 24vh; resize: none; field-sizing: content; border: 0; outline: none; padding: 2px 4px; background: transparent; color: inherit; font: inherit; font-size: 15px; line-height: 1.5; }
-.coding-compose-tools { display: flex; align-items: center; justify-content: space-between; }
 .coding-shell button.coding-folder-button { border: 0; color: var(--text-secondary); }
 .coding-shell button.coding-send { border-radius: 50%; width: 34px; height: 34px; margin-left: auto; padding: 0; justify-content: center; }
 .coding-shell .coding-primary:hover:not(:disabled) { background: var(--text-secondary); color: var(--bg-canvas); }
@@ -1397,3 +1392,22 @@
 .coding-settings fieldset label { display:flex; align-items:center; gap:8px; }
 .coding-settings input[type=checkbox] { width:auto; margin:0; }
 .coding-settings button { justify-self:start; }
+
+.penguin-composer { color: var(--text-primary); }
+.composer-notice { margin:0; padding:8px 12px; font-size:13px; color:var(--text-primary); background:var(--bg-surface-hover); }
+.penguin-composer [data-slot=composer] { background:var(--bg-surface); border-radius:18px; }
+.penguin-composer textarea:focus-visible { outline:none; }
+.coding-compose-area > .coding-folder-button { margin-top:6px; }
+.coding-text:has(.md-body) { white-space:normal; }
+.composer-dialog { position:fixed; inset:0; margin:auto; width:min(400px,calc(100vw - 24px)); max-height:65vh; overflow:auto; border:1px solid var(--border); border-radius:14px; padding:0; background:var(--bg-surface); color:var(--text-primary); }
+.composer-dialog::backdrop { background:var(--bg-scrim); }
+.composer-dialog > div { display:grid; gap:5px; padding:16px; }
+.composer-dialog header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.composer-dialog button { text-align:left; padding:7px 10px; border-radius:8px; overflow-wrap:anywhere; }
+.composer-dialog button:hover, .composer-dialog button[aria-pressed=true] { background:var(--bg-surface-hover); }
+.composer-dialog small { display:block; color:var(--text-secondary); }
+.coding-history .coding-meta { gap:12px; }
+@media(max-width:480px) {
+  .coding-compose-area { width:calc(100% - 16px); }
+  .penguin-composer [data-slot=composer] > div:last-child { gap:2px; }
+}

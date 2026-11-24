@@ -1,3 +1,5 @@
+import { Prose } from "@prismshadow/penguin-ui";
+import { FileTiles } from "./CodingComposer";
 import { useState } from "react";
 import { useI18n } from "../i18n/context";
 import type { Messages } from "../i18n/types";
@@ -167,6 +169,7 @@ export function CodingTimeline({
   onDiff?: () => void;
 }) {
   const c = useI18n().t.coding;
+  const { locale } = useI18n();
   const turns = groupEntries(entries, (e) => e.turn_id);
   return (
     <div className="coding-timeline">
@@ -176,6 +179,17 @@ export function CodingTimeline({
           terminalStates.includes(state?.state || "") ||
           state?.state === "cancelling";
         const model = rows.find((e) => e.payload.model)?.payload;
+        const usage = rows.filter((e) => e.kind === "usage").at(-1)?.payload;
+        const started = rows.find(
+          (e) => e.payload.state === "running",
+        )?.recorded_at;
+        const ended = rows.find((e) =>
+          terminalStates.includes(e.payload.state || ""),
+        )?.recorded_at;
+        const seconds =
+          started && ended
+            ? (Date.parse(ended) - Date.parse(started)) / 1000
+            : undefined;
         const calls = groupEntries(
           rows.filter((e) => e.payload.call_id),
           (e) => e.payload.call_id,
@@ -202,6 +216,9 @@ export function CodingTimeline({
                 return (
                   <div className="coding-user" key={entry.seq}>
                     {p.text}
+                    {p.attachments?.length ? (
+                      <FileTiles files={p.attachments} sid={sid} />
+                    ) : null}
                   </div>
                 );
               if (
@@ -219,7 +236,7 @@ export function CodingTimeline({
                   </details>
                 ) : (
                   <div key={entry.seq} className="coding-text">
-                    {text}
+                    <Prose text={text} streaming={!closed} />
                   </div>
                 );
               }
@@ -327,7 +344,9 @@ export function CodingTimeline({
                           {c.ruleError} · {e.payload.rule_error}
                         </p>
                       ))}
-                    {unknown && onDiff && <button onClick={onDiff}>{c.diff}</button>}
+                    {unknown && onDiff && (
+                      <button onClick={onDiff}>{c.diff}</button>
+                    )}
                     {permissions.map((e) => (
                       <Permission
                         key={e.seq}
@@ -413,6 +432,22 @@ export function CodingTimeline({
                 );
               return null;
             })}
+            {!filter && (usage || seconds !== undefined) && (
+              <footer
+                className="coding-meta"
+                aria-label={locale === "zh" ? "轮次用量" : "Turn usage"}
+              >
+                {usage && (
+                  <span>
+                    {locale === "zh" ? "输入" : "Input"}{" "}
+                    {usage.input_tokens?.toLocaleString()} ·{" "}
+                    {locale === "zh" ? "输出" : "Output"}{" "}
+                    {usage.output_tokens?.toLocaleString()} tokens
+                  </span>
+                )}
+                {seconds !== undefined && <span>{seconds.toFixed(1)} s</span>}
+              </footer>
+            )}
             {!filter && state?.reason && (
               <p role="status">
                 {state.error_type === "storage"

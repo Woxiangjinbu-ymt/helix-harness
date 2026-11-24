@@ -17,8 +17,6 @@ from mewcode.hooks.loader import load_hooks
 from mewcode.hooks.models import ToolRejectedError
 from mewcode.memory.session import (
     SessionRecord,
-    make_compact_boundary,
-    records_to_messages,
 )
 from mewcode.permissions import (
     DangerousCommandDetector,
@@ -31,8 +29,8 @@ from mewcode.permissions import (
 from mewcode.permissions.rules import Rule, extract_content
 from mewcode.tools import ToolRegistry
 from mewcode.tools.base import Tool, ToolResult
-from webdemo import providers
 
+from .model_input import CodingModel, compact_record, replay
 from .store import uid
 from .worker import MAX_FRAME, Channel
 
@@ -204,22 +202,7 @@ async def run(data, channel):
         max_output_tokens=snap["max_output_tokens"],
     )
 
-    class Model:
-        def __init__(self):
-            self.inner = (
-                None if snap.get("source") == "demo" else providers.client(supplied)
-            )
-
-        async def stream(self, *args, **kwargs):
-            await channel.request("model_permission")
-            if self.inner is None:
-                from mewcode.tools.base import StreamEnd, TextDelta
-
-                yield TextDelta(text="MewCode Demo · local demonstration")
-                yield StreamEnd(stop_reason="end_turn")
-                return
-            async for event in self.inner.stream(*args, **kwargs):
-                yield event
+    from mewcode.context.manager import compute_compact_threshold
 
     registry = ToolRegistry()
     for cls in (ReadFile, EditFile, WriteFile, Glob, Grep, Bash):
@@ -231,7 +214,7 @@ async def run(data, channel):
     private = Path(data["private_dir"])
     (private / "tool-results").mkdir(mode=0o700, parents=True, exist_ok=True)
     agent = WebAgent(
-        client=Model(),
+        client=CodingModel(supplied, snap, channel),
         registry=registry,
         protocol=supplied.protocol,
         work_dir=str(directory),
@@ -261,7 +244,7 @@ async def run(data, channel):
     boundary = max(
         (i for i, r in enumerate(records) if r.is_compact_boundary()), default=0
     )
-    conv = SessionConversation(history=records_to_messages(records[boundary:]))
+    conv = SessionConversation(history=replay(records[boundary:], data, snap))
     for msg in conv.history:
         msg.persisted = True
     history_file = private / "history.jsonl"
@@ -289,6 +272,29 @@ async def run(data, channel):
         with history_file.open("a") as stream:
             stream.write(serialized + "\n")
 
+    last_context = None
+
+    async def report_context():
+        nonlocal last_context
+        reading = (
+            conv.current_tokens(),
+            "measured"
+            if conv.baseline_tokens and conv.anchor_count == len(conv.history)
+            else "estimated",
+        )
+        if reading != last_context:
+            await emit(
+                "context",
+                used=reading[0],
+                source=reading[1],
+                window=snap["context_window"],
+                threshold=compute_compact_threshold(snap["context_window"]),
+                model=snap["model"],
+                profile_id=snap["profile_id"],
+            )
+            last_context = reading
+
+    await report_context()
     for name in data.get("skills", {}):
         await emit("extension", extension="Skill", name=name, status="loaded")
     async for ev in agent.run(conv):
@@ -344,10 +350,7 @@ async def run(data, channel):
             )
         elif isinstance(ev, native.CompactNotification):
             if ev.boundary is not None:
-                boundary_record = make_compact_boundary(
-                    ev.boundary.summary, ev.boundary.keep
-                )
-                await persist(boundary_record)
+                await persist(compact_record(ev.boundary.summary, ev.boundary.keep))
                 for message_in_boundary in conv.history:
                     message_in_boundary.persisted = True
             await emit(
@@ -359,13 +362,48 @@ async def run(data, channel):
         elif isinstance(ev, native.ErrorEvent):
             failure = ev.message
             await emit("error", text=ev.message)
-        elif isinstance(ev, native.UsageEvent):
-            await emit("usage", **asdict(ev))
+        elif (
+            isinstance(ev, native.UsageEvent)
+            and agent.client.latest
+            and (ev.input_tokens or ev.output_tokens or agent.client.cached)
+        ):
+            await emit(
+                "usage",
+                input_tokens=ev.input_tokens + agent.client.cached,
+                output_tokens=ev.output_tokens,
+            )
         for msg in conv.history:
             if not msg.persisted:
                 for record in SessionRecord.from_message(msg):
+                    if msg.thinking_blocks and supplied.protocol == "openai-compat":
+                        record.type = "web_reply"
+                        record.content = {
+                            "text": msg.content,
+                            "profile": snap["profile_id"],
+                            "model": snap["model"],
+                            "blocks": [asdict(b) for b in msg.thinking_blocks],
+                        }
+                        msg.web_reply = record.content
                     await persist(record)
                 msg.persisted = True
+        if isinstance(ev, native.LoopComplete) and agent.client.latest:
+            measured = agent.client.latest
+            conv.record_usage_anchor(
+                measured.input_tokens,
+                measured.output_tokens,
+                measured.cache_read,
+                measured.cache_creation,
+            )
+        if isinstance(
+            ev,
+            (
+                native.CompactNotification,
+                native.ToolResultEvent,
+                native.LoopComplete,
+                native.TurnComplete,
+            ),
+        ):
+            await report_context()
         if isinstance(ev, native.TurnComplete):
             message = uid()
     await channel.request(

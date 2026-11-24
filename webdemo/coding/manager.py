@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from mewcode.memory.session import SessionRecord
 from mewcode.permissions.rules import Rule, RuleEngine, extract_content
 from mewcode.tools.bash import Bash
 from mewcode.tools.edit_file import EditFile
@@ -25,6 +24,7 @@ from webdemo import providers
 
 from . import actions, profiles, worker
 from .mcp_bridge import BoundMCPTool
+from .model_input import user_record
 from .models import Conflict
 from .runtime_adapter import checker
 from .store import digest, encode, now, uid
@@ -228,10 +228,11 @@ class Manager:
                 stop_task.add_done_callback(self.tasks.discard)
         return result
 
-    def submit(self, sid, request, text):
+    def submit(self, sid, request, text, extras=None):
+        payload = {"text": text, **extras} if extras else text
         if sid in self.faults:
             with self.store.connection() as db:
-                receipt = self.store.existing(db, sid + "/submit", request, text)
+                receipt = self.store.existing(db, sid + "/submit", request, payload)
                 if receipt is not None:
                     return receipt
             raise sqlite3.OperationalError("进度存储不可用")
@@ -239,7 +240,12 @@ class Manager:
             sid,
             request,
             text,
-            lambda profile: profiles.for_session(self.store, sid, profile),
+            lambda profile: (
+                profiles.for_session(self.store, sid, profile, extras)
+                if extras
+                else profiles.for_session(self.store, sid, profile)
+            ),
+            extras,
         )
         if created:
             task = asyncio.create_task(self.execute(sid, result["turn_id"]))
@@ -315,8 +321,10 @@ class Manager:
                 data = json.loads(r["payload"])
                 if r["kind"] == "user":
                     records.append(
-                        SessionRecord(
-                            "user", data["text"], datetime.fromisoformat(r["recorded"])
+                        user_record(
+                            data["text"],
+                            data.get("attachments", []),
+                            datetime.fromisoformat(r["recorded"]),
                         ).to_jsonl()
                     )
                 else:
@@ -333,6 +341,7 @@ class Manager:
                 "root": tree.root,
                 "directory": str(directory),
                 "private_dir": str(scratch),
+                "attachment_db": str(self.store.path),
                 "rules": str(rules),
                 "snapshot": snap,
                 "credential": secret,

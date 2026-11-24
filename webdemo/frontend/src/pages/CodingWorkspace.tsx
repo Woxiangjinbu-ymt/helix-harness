@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ArrowUp,
   ChevronRight,
   Code2,
   Files,
@@ -32,6 +31,10 @@ import { DiffViewer } from "../components/DiffViewer";
 import { CodingSettings } from "./CodingSettings";
 import { CodingDirectoryPicker } from "../components/CodingDirectoryPicker";
 import { CodingTimeline } from "../components/CodingTimeline";
+
+import { CodingComposer, CodingTheme } from "../components/CodingComposer";
+import { discardFile, draftStorage, uploadFiles } from "../lib/composer";
+import type { DraftFile, Preferences, Profile } from "../lib/composer";
 
 type Panel = "files" | "diff" | "terminal" | "tools";
 type Change = {
@@ -162,10 +165,71 @@ export function CodingWorkspace({
   const { session, entries, error, offline, reload } = useSession(id);
   const draftKey = "coding.draft." + (id || "new");
   const [draft, setDraft] = useState(
-    () => sessionStorage.getItem(draftKey) || "",
+    () => draftStorage.getItem(draftKey) || "",
   );
+  const profiles = useData<Profile[]>("coding/profiles", rev);
+  const [edits, setEdits] = useState<Preferences>(() =>
+    JSON.parse(draftStorage.getItem(draftKey + ".options") || "{}"),
+  );
+  const [files, setFiles] = useState<DraftFile[]>(() =>
+    JSON.parse(draftStorage.getItem(draftKey + ".files") || "[]"),
+  );
+  const prefs = { ...session?.composer, ...edits };
+  function changePrefs(change: Preferences) {
+    setEdits((old) => {
+      const next = { ...old, ...change };
+      draftStorage.setItem(draftKey + ".options", JSON.stringify(next));
+      return next;
+    });
+  }
+  function changeFiles(change: (old: DraftFile[]) => DraftFile[]) {
+    setFiles((old) => {
+      const next = change(old);
+      draftStorage.setItem(draftKey + ".files", JSON.stringify(next));
+      return next;
+    });
+  }
+  function acknowledge(request: string) {
+    const key = draftKey + ".request";
+    const saved = draftStorage.getItem(key);
+    if (!saved) return;
+    const receipt = JSON.parse(saved);
+    if (receipt.id !== request) return;
+    // Text-only requests created by an earlier version used the draft itself.
+    let sent: { text: string; attachment_ids?: string[] } = {
+      text: receipt.content,
+    };
+    try {
+      const parsed = JSON.parse(receipt.content);
+      if (typeof parsed?.text === "string") sent = parsed;
+    } catch {
+      /* legacy draft */
+    }
+    if ((draftStorage.getItem(draftKey) || "") === sent.text) changeDraft("");
+    const used = sent.attachment_ids || [];
+    if (used.length) {
+      changeFiles((old) => old.filter((f) => !used.includes(f.id)));
+      for (const fid of used) void discardFile(fid).catch(() => {});
+    }
+    draftStorage.removeItem(key);
+    const pendingOptions = draftStorage.getItem(draftKey + ".options");
+    if (
+      pendingOptions &&
+      Object.entries(JSON.parse(pendingOptions)).every(
+        ([k, v]) =>
+          JSON.stringify((sent as Record<string, unknown>)[k]) ===
+          JSON.stringify(v),
+      )
+    ) {
+      draftStorage.removeItem(draftKey + ".options");
+    }
+    setFailure("");
+    setRev((v) => v + 1);
+  }
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [picker, setPicker] = useState<"open" | "send" | null>(null);
+  const [picker, setPicker] = useState<"open" | "reference" | "send" | null>(
+    null,
+  );
   const [sidebar, setSidebar] = useState(false);
   const [failure, setFailure] = useState("");
   const busy = useRef(false);
@@ -184,12 +248,12 @@ export function CodingWorkspace({
   const empty = !id || (session && !entries.length && !pending);
   const folderName = session?.directory.split("/").pop() || "/";
   const recent = sessions.data?.filter(
-    (s) => s.title || sessionStorage.getItem("coding.draft." + s.session_id),
+    (s) => s.title || draftStorage.getItem("coding.draft." + s.session_id),
   );
   const input = useRef<HTMLTextAreaElement>(null);
   function changeDraft(text: string) {
     setDraft(text);
-    sessionStorage.setItem(draftKey, text);
+    draftStorage.setItem(draftKey, text);
   }
   async function perform(fn: () => Promise<void>) {
     if (busy.current) return;
@@ -206,44 +270,70 @@ export function CodingWorkspace({
     }
   }
   async function openDirectory(directory: string) {
-    const profile = localStorage.getItem("coding.profile") || "";
+    const profile =
+      localStorage.getItem("coding.profile") ||
+      profiles.data?.find((p) => p.source === "native")?.profile_id ||
+      edits.model_profile_id ||
+      "";
     const key = "coding.new.request";
     const result = await api<Session>("coding/sessions", {
       directory,
       profile_id: profile,
-      request_id: requestId(key, JSON.stringify([directory, profile])),
+      request_id: requestId(
+        key,
+        JSON.stringify([directory, profile]),
+        draftStorage,
+      ),
     });
     const nextKey = "coding.draft." + result.session_id;
-    sessionStorage.setItem(nextKey, draft);
+    draftStorage.setItem(nextKey, draft);
+    draftStorage.setItem(nextKey + ".files", JSON.stringify(files));
+    draftStorage.setItem(nextKey + ".options", JSON.stringify(edits));
+    draftStorage.removeItem(draftKey + ".files");
+    draftStorage.removeItem(draftKey + ".options");
+    if (picker === "reference")
+      sessionStorage.setItem(nextKey + ".reference", "1");
     if (picker === "send") sessionStorage.setItem(nextKey + ".send", "1");
     localStorage.setItem("coding.lastDirectory", result.directory);
-    sessionStorage.removeItem(key);
-    sessionStorage.removeItem(draftKey);
+    draftStorage.removeItem(key);
+    draftStorage.removeItem(draftKey);
     go("coding", result.session_id);
   }
   function send() {
-    if (!draft.trim() || active || busy.current || showPending) return;
+    if (
+      (!draft.trim() && !files.length) ||
+      active ||
+      busy.current ||
+      showPending
+    )
+      return;
     if (!id) {
       setPicker("send");
       return;
     }
     if (!session?.available) return;
     const key = draftKey + ".request";
-    const submission = requestId(key, draft);
-    setPending({ request: submission, text: draft });
+    const payload = {
+      text: draft,
+      ...edits,
+      ...(files.length ? { attachment_ids: files.map((f) => f.id) } : {}),
+    };
+    const submission = requestId(key, JSON.stringify(payload), draftStorage);
+    setPending({
+      request: submission,
+      text: draft || files.map((f) => f.name).join(", "),
+    });
     void perform(async () => {
       try {
+        await uploadFiles(id, files);
         await api(sessionPath(id) + "/turns", {
+          ...payload,
           submit_request_id: submission,
-          text: draft,
         });
-        // 回执或事件任一先到，都可以确认接收。等待事件接替临时气泡。
-        if (sessionStorage.getItem(draftKey) === draft) changeDraft("");
-        sessionStorage.removeItem(key);
-        setRev((v) => v + 1);
+        acknowledge(submission);
       } catch (err) {
         setPending(null);
-        if (sessionStorage.getItem(key)) throw err;
+        if (draftStorage.getItem(key)) throw err;
       }
     });
   }
@@ -257,15 +347,10 @@ export function CodingWorkspace({
   }, [session?.session_id, settings]);
   useEffect(() => {
     const key = draftKey + ".request";
-    const saved = sessionStorage.getItem(key);
+    const saved = draftStorage.getItem(key);
     if (saved) {
-      const { id: request, content } = JSON.parse(saved);
-      if (userRequests.includes(request)) {
-        if (sessionStorage.getItem(draftKey) === content) changeDraft("");
-        sessionStorage.removeItem(key);
-        setFailure("");
-        setRev((v) => v + 1);
-      }
+      const { id: request } = JSON.parse(saved);
+      if (userRequests.includes(request)) acknowledge(request);
     }
     if (pending && userRequests.includes(pending.request)) setPending(null);
   }, [entries, pending]);
@@ -279,6 +364,7 @@ export function CodingWorkspace({
     rev + entries.filter((e) => e.kind === "action_ended").length;
   return (
     <div className={"app coding-shell" + (sidebar ? " sidebar-open" : "")}>
+      <CodingTheme />
       {sidebar && (
         <button
           className="coding-scrim"
@@ -316,7 +402,7 @@ export function CodingWorkspace({
               <Code2 size={15} />
               <span>
                 {s.title ||
-                  sessionStorage.getItem("coding.draft." + s.session_id)}
+                  draftStorage.getItem("coding.draft." + s.session_id)}
                 <small title={s.directory}>
                   {s.directory.split("/").pop() || "/"}
                 </small>
@@ -410,29 +496,6 @@ export function CodingWorkspace({
                       })}
                   </div>
                 )}
-                {id && active && (
-                  <button
-                    disabled={sending || lastState === "cancelling"}
-                    onClick={() => {
-                      const turn = entries
-                        .filter((e) => e.kind === "state")
-                        .at(-1)!.turn_id;
-                      void perform(async () => {
-                        await api(
-                          sessionPath(id) + "/turns/" + turn + "/cancel",
-                          {
-                            request_id: requestId(
-                              "coding.cancel." + turn,
-                              turn,
-                            ),
-                          },
-                        );
-                      });
-                    }}
-                  >
-                    {locale === "zh" ? "取消轮次" : "Cancel turn"}
-                  </button>
-                )}
                 {id && !session && !error && (
                   <p role="status">{t.controls.loading}</p>
                 )}
@@ -479,7 +542,7 @@ export function CodingWorkspace({
                       {error ? (
                         <button onClick={reload}>{c.again}</button>
                       ) : (
-                        draft.trim() && (
+                        (draft.trim() || files.length > 0) && (
                           <button disabled={sending || active} onClick={send}>
                             {c.again}
                           </button>
@@ -487,63 +550,59 @@ export function CodingWorkspace({
                       )}
                     </div>
                   )}
-                  <form
-                    className="coding-composer"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      send();
+                  <CodingComposer
+                    sid={id}
+                    session={session}
+                    entries={entries}
+                    input={input}
+                    draft={draft}
+                    changeDraft={changeDraft}
+                    send={send}
+                    cancel={() => {
+                      const turn = entries
+                        .filter((e) => e.kind === "state")
+                        .at(-1)?.turn_id;
+                      if (id && turn && lastState !== "cancelling")
+                        void perform(async () => {
+                          await api(
+                            sessionPath(id) + "/turns/" + turn + "/cancel",
+                            {
+                              request_id: requestId(
+                                "coding.cancel." + turn,
+                                turn,
+                              ),
+                            },
+                          );
+                        });
                     }}
-                  >
-                    <textarea
-                      ref={input}
-                      aria-label={c.draft}
-                      autoFocus
-                      rows={2}
-                      placeholder={c.prompt}
-                      value={draft}
-                      disabled={Boolean(id) && !session}
-                      readOnly={sending}
-                      onChange={(e) => changeDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (
-                          e.key === "Enter" &&
-                          !e.shiftKey &&
-                          !e.altKey &&
-                          !e.nativeEvent.isComposing &&
-                          e.nativeEvent.keyCode !== 229
-                        ) {
-                          e.preventDefault();
-                          send();
-                        }
-                      }}
-                    />
-                    <div className="coding-compose-tools">
-                      {!id && (
-                        <button
-                          type="button"
-                          className="coding-folder-button"
-                          onClick={() => setPicker("open")}
-                        >
-                          <FolderOpen size={16} />
-                          {c.choose}
-                        </button>
-                      )}
-                      <button
-                        className="coding-primary coding-send"
-                        aria-label={c.send}
-                        title={c.send}
-                        disabled={
-                          (Boolean(id) && !session?.available) ||
-                          sending ||
-                          active ||
-                          Boolean(showPending) ||
-                          !draft.trim()
-                        }
-                      >
-                        <ArrowUp size={19} />
-                      </button>
-                    </div>
-                  </form>
+                    active={active}
+                    disabled={
+                      Boolean(id && !session?.available) ||
+                      sending ||
+                      Boolean(showPending) ||
+                      (!draft.trim() && !files.length)
+                    }
+                    busy={sending}
+                    prefs={prefs}
+                    changePrefs={changePrefs}
+                    files={files}
+                    changeFiles={changeFiles}
+                    fail={setFailure}
+                    profiles={profiles.data}
+                    profilesError={profiles.error}
+                    chooseDirectory={(reference) =>
+                      setPicker(reference ? "reference" : "open")
+                    }
+                  />
+                  {!id && (
+                    <button
+                      className="coding-folder-button"
+                      onClick={() => setPicker("open")}
+                    >
+                      <FolderOpen size={15} />
+                      {c.choose}
+                    </button>
+                  )}
                 </div>
                 {picker && (
                   <CodingDirectoryPicker

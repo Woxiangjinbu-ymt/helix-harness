@@ -6,10 +6,20 @@ export type Session = {
   directory: string;
   title: string;
   available?: boolean;
+  profile_id: string;
+  composer?: import("./composer").Preferences;
   workspace_kind: "git" | "folder";
 };
 export type Payload = {
   submit_request_id?: string;
+  profile_id?: string;
+  used?: number;
+  window?: number;
+  threshold?: number;
+  thinking_level?: string;
+  attachments?: import("./composer").Attachment[];
+  input_tokens?: number;
+  output_tokens?: number;
   text?: string;
   state?: string;
   reason?: string;
@@ -49,6 +59,7 @@ export type Payload = {
 };
 export type Entry = {
   seq: number;
+  recorded_at: string;
   turn_id: string;
   kind: string;
   payload: Payload;
@@ -157,13 +168,17 @@ export function useSession(id?: string) {
   };
 }
 
-export function requestId(key: string, content: string) {
-  const old = sessionStorage.getItem(key);
+export function requestId(
+  key: string,
+  content: string,
+  storage: Pick<Storage, "getItem" | "setItem"> = sessionStorage,
+) {
+  const old = storage.getItem(key);
   if (old) {
     const saved = JSON.parse(old);
     if (saved.content === content) return saved.id as string;
   }
   const id = crypto.randomUUID();
-  sessionStorage.setItem(key, JSON.stringify({ id, content }));
+  storage.setItem(key, JSON.stringify({ id, content }));
   return id;
 }

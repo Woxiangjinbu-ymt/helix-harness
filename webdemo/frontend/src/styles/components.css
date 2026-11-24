@@ -1,5 +1,7 @@
 /* Shared UI Primitives & Components */
 
+/* The Penguin composer and its portalled menus ship their own control styles. */
+@scope (:root) to ([data-slot="composer"], .ui-glass, [data-slot="attachments"], .md-body) {
 /* Inputs & Buttons */
 button.btn,
 .btn,
@@ -126,6 +128,8 @@ select:focus {
   border-color: var(--accent);
   box-shadow: var(--shadow-focus);
   outline: none;
+}
+
 }
 
 /* Panels & Cards */
@@ -447,6 +451,7 @@ select:focus {
   overflow: auto;
 }
 
+@scope (:root) to (.md-body) {
 table {
   border-collapse: collapse;
   width: 100%;
@@ -480,6 +485,8 @@ tbody tr:hover {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
 }
 
 /* Selectable Lists */

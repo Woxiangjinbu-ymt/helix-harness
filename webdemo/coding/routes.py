@@ -4,16 +4,18 @@ import asyncio
 import json
 import sqlite3
 from functools import lru_cache
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
-from . import profiles
+from . import attachments, profiles
 from .manager import Manager
 from .models import (
     CancelRequest,
-    DirectoryRequest,
     Conflict,
+    DirectoryRequest,
+    FileReference,
     PermissionAnswer,
     ProfileRequest,
     SessionOptions,
@@ -44,10 +46,63 @@ def manager():
     return Manager(store())
 
 
+@router.post("/sessions/{sid}/attachments/{aid}")
+async def upload(sid: str, aid: UUID, request: Request, name: str):
+    with store().connection() as db:
+        store().session(sid, db)
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > attachments.MAX_FILE:
+            raise HTTPException(413, "每个附件最多 4 MiB")
+        data.extend(chunk)
+    try:
+        return attachments.stage(store(), sid, str(aid), name, bytes(data))
+    except Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/sessions/{sid}/references/{aid}")
+def reference(sid: str, aid: UUID, form: FileReference):
+    path = form.path
+    try:
+        data = location(sid).read(path)
+        return attachments.stage(store(), sid, str(aid), path, data)
+    except Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(404, "文件不可用") from exc
+
+
+@router.get("/sessions/{sid}/attachments/{aid}")
+def retrieve(sid: str, aid: UUID):
+    with store().connection() as db:
+        row = db.execute(
+            "SELECT mime,data FROM attachments WHERE session=? AND id=?",
+            (sid, str(aid)),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "附件不可用")
+    return Response(
+        bytes(row["data"]),
+        media_type=row["mime"],
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 @router.post("/sessions/{sid}/turns", status_code=202)
 async def submit(sid: str, form: TurnRequest):
     try:
-        return manager().submit(sid, form.submit_request_id, form.text)
+        extras = form.model_dump(
+            mode="json",
+            exclude={"text", "submit_request_id"},
+            exclude_none=True,
+            exclude_defaults=True,
+        )
+        return manager().submit(sid, form.submit_request_id, form.text, extras)
     except Conflict as exc:
         raise HTTPException(409, {"message": str(exc), **exc.details}) from exc
     except OSError as exc:
@@ -238,7 +293,12 @@ def changes(sid: str, path: str | None = None):
 
 @router.get("/profiles")
 def all_profiles():
-    return profiles.list_profiles(store())
+    from mewcode.context.manager import compute_compact_threshold
+
+    return [
+        dict(p, compact_threshold=compute_compact_threshold(p["context_window"]))
+        for p in profiles.list_profiles(store())
+    ]
 
 
 @router.post("/profiles")
@@ -276,10 +336,19 @@ def options(sid: str):
         else {"skills": [], "mcp": [], "hooks": list(catalog["hooks"])}
     )
     return {
-        "profile_id": session["profile_id"],
+        "profile_id": session["composer"].get(
+            "model_profile_id", session["profile_id"]
+        ),
         "catalog": {k: list(catalog[k]) for k in kinds},
         "errors": catalog["errors"],
-        "selected": selected,
+        "selected": {
+            **selected,
+            **(
+                {"skills": session["composer"]["skills"]}
+                if "skills" in session["composer"]
+                else {}
+            ),
+        },
         "connections": connections,
     }
 
@@ -315,7 +384,19 @@ def set_options(sid: str, form: SessionOptions):
             "INSERT OR REPLACE INTO session_options VALUES(?,?)",
             (sid, json.dumps(values)),
         )
-        db.execute("UPDATE sessions SET profile=? WHERE id=?", (form.profile_id, sid))
+        session = store().session(sid, db)
+        prefs = session["composer"]
+        prefs.pop("skills", None)
+        if form.profile_id != prefs.get("model_profile_id", session["profile_id"]):
+            prefs["model_profile_id"] = (
+                form.profile_id or profiles.snapshot("", store().root)["provider"]
+            )
+            prefs.pop("thinking_level", None)
+        db.execute(
+            "INSERT OR REPLACE INTO composer_options VALUES(?,?)",
+            (sid, json.dumps(prefs)),
+        )
+
     return {"profile_id": form.profile_id, "selected": values}
 
 

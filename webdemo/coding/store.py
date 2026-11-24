@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS credentials(id TEXT PRIMARY KEY, secret TEXT, revoked
 CREATE TABLE IF NOT EXISTS mcp_connections(session TEXT NOT NULL REFERENCES sessions(id),name TEXT NOT NULL,document TEXT NOT NULL,PRIMARY KEY(session,name));
 CREATE TABLE IF NOT EXISTS profile_keys(profile TEXT, credential TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS coding_profiles(id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS attachments(session TEXT NOT NULL REFERENCES sessions(id), id TEXT NOT NULL,
+ name TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,digest TEXT NOT NULL,data BLOB NOT NULL,
+ created REAL NOT NULL,used INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(session,id));
+CREATE TABLE IF NOT EXISTS composer_options(session TEXT PRIMARY KEY REFERENCES sessions(id),document TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS session_options(session TEXT PRIMARY KEY REFERENCES sessions(id), document TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trees(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, tree TEXT NOT NULL REFERENCES trees(id),
@@ -138,6 +142,10 @@ class Store:
         if row is None:
             raise KeyError(sid)
         r = dict(row)
+        prefs = db.execute(
+            "SELECT document FROM composer_options WHERE session=?", (sid,)
+        ).fetchone()
+        r["composer"] = json.loads(prefs[0]) if prefs else {}
         r["identity"] = json.loads(r["identity"])
         r["workspace_kind"] = "git" if r["identity"]["admin"] else "folder"
         r["directory"] = str(Path(r["identity"]["root"]) / r["cwd_relative"])
@@ -242,11 +250,15 @@ class Store:
                 {"session_id": sid, "turn_id": tid, "state": state},
             )
 
-    def submit(self, sid, request, text, resolve_snapshot):
+    def submit(self, sid, request, text, resolve_snapshot, extras=None):
+        from .attachments import bind
+
+        extras = extras or {}
+        payload = {"text": text, **extras} if extras else text
         with self.connection(True) as db:
             session = self.session(sid, db)
             scope = sid + "/submit"
-            existing = self.existing(db, scope, request, text)
+            existing = self.existing(db, scope, request, payload)
             if existing:
                 return existing, False
             Worktree(**session["identity"]).verify(session["cwd_relative"])
@@ -256,6 +268,17 @@ class Store:
             if active:
                 raise Conflict("会话已有运行中的轮次", turn_id=active[0])
             document = resolve_snapshot(session["profile_id"])
+            attached = bind(
+                db, sid, extras.get("attachment_ids", []), document.get("vision", False)
+            )
+            if not text.strip() and not attached:
+                raise ValueError("请输入消息或添加附件")
+            prefs = {k: v for k, v in extras.items() if k != "attachment_ids"}
+            if prefs:
+                db.execute(
+                    "INSERT OR REPLACE INTO composer_options VALUES(?,?)",
+                    (sid, encode({**session["composer"], **prefs})),
+                )
             snapshot, tid, stamp = digest(document), uid(), now()
             db.execute(
                 "INSERT OR IGNORE INTO snapshots VALUES(?,?)",
@@ -271,7 +294,11 @@ class Store:
                 tid,
                 "user",
                 "user",
-                {"text": text, "submit_request_id": str(request)},
+                {
+                    "text": text,
+                    "submit_request_id": str(request),
+                    **({"attachments": attached} if attached else {}),
+                },
             )
             self.event(
                 db,
@@ -282,13 +309,15 @@ class Store:
                 {
                     "state": "accepted",
                     "model": document.get("model"),
+                    "profile_id": document.get("profile_id"),
+                    "thinking_level": document.get("thinking_level", "default"),
                     "source": document.get("source", "native"),
                     "provider": document.get("provider"),
                 },
             )
             db.execute(
                 "UPDATE sessions SET active=?, title=CASE WHEN title='' THEN ? ELSE title END WHERE id=?",
-                (stamp, text[:72], sid),
+                (stamp, (text.strip() or attached[0]["name"])[:72], sid),
             )
             result = {
                 "session_id": sid,
@@ -296,4 +325,4 @@ class Store:
                 "snapshot_id": snapshot,
                 "state": "accepted",
             }
-            return self.remember(db, scope, request, text, result), True
+            return self.remember(db, scope, request, payload, result), True

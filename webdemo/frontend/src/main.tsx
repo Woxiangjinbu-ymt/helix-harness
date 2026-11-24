@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChevronRight,
@@ -21,7 +21,7 @@ import { num, relativeTime, short } from "./lib/format";
 import { WorkspaceProvider, useWorkspace } from "./lib/workspaceContext";
 import { Dashboard } from "./pages/Dashboard";
 import { Workspace } from "./pages/Workspace";
-import { CodingWorkspace } from "./pages/CodingWorkspace";
+const CodingWorkspace = lazy(() => import("./pages/CodingWorkspace").then(m => ({default:m.CodingWorkspace})));
 import { Evolution } from "./pages/Evolution";
 import { Evaluations } from "./pages/Evaluations";
 import { Versions } from "./pages/Versions";
@@ -391,7 +391,7 @@ function App() {
   const coding = !route || route === "coding" || route === "coding-settings";
   useEffect(() => { document.title = coding ? "MewCode · Coding Workspace" : "Helix · RSI Center"; }, [coding]);
   if (coding) {
-    return <CodingWorkspace key={route + "/" + (id || "")} id={id} settings={route === "coding-settings"} />;
+    return <Suspense fallback={null}><CodingWorkspace key={route + "/" + (id || "")} id={id} settings={route === "coding-settings"} /></Suspense>;
   }
   return <WorkspaceProvider><AppShell /></WorkspaceProvider>;
 }

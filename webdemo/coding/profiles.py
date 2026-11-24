@@ -81,12 +81,38 @@ def snapshot(profile, root):
     }
 
 
+def capabilities(model, protocol, endpoint=""):
+    from urllib.parse import urlsplit
+
+    deepseek = urlsplit(endpoint).hostname == "api.deepseek.com"
+    levels = ["default"]
+    vision = False
+    if (
+        deepseek
+        and protocol == "openai-compat"
+        and model in {"deepseek-flash", "deepseek-v4-pro"}
+    ):
+        levels += ["off", "low", "high", "max"]
+        vision = model == "deepseek-flash"
+    elif protocol == "anthropic" and model.startswith(
+        ("claude-sonnet-4", "claude-opus-4")
+    ):
+        levels += ["off", "on"]
+        vision = True
+    elif protocol in ("openai", "openai-compat"):
+        vision = model.startswith(("gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4-mini"))
+        if model in ("o3", "o4-mini", "gpt-5", "gpt-5-mini"):
+            levels += ["low", "medium", "high"]
+    return {"thinking_levels": levels, "vision": vision}
+
+
 def list_profiles(store):
     import json
 
     from webdemo import providers
 
     try:
+        config = providers.configuration()
         native = [
             {
                 "profile_id": p.name,
@@ -94,10 +120,14 @@ def list_profiles(store):
                 "model": p.model,
                 "protocol": p.protocol,
                 "source": "native",
+                "permission_mode": config.permission_mode,
+                "context_window": p.get_context_window(),
+                "window_source": "configured" if p.context_window else "runtime",
+                **capabilities(p.model, p.protocol, p.base_url),
                 "configured": bool(p.resolve_api_key()),
                 "revision": 0,
             }
-            for p in providers.configuration().providers
+            for p in config.providers
         ]
     except (ValueError, OSError):
         native = []
@@ -118,6 +148,8 @@ def list_profiles(store):
                     revision=revision,
                     configured=bool(configured),
                     source="web",
+                    window_source="configured",
+                    **capabilities(d["model"], d["protocol"], d["endpoint"]),
                 )
             )
     return native + [
@@ -126,6 +158,10 @@ def list_profiles(store):
             "provider": "MewCode Demo",
             "model": "coding-demo",
             "source": "demo",
+            "context_window": 128000,
+            "window_source": "demo",
+            "permission_mode": "default",
+            **capabilities("coding-demo", ""),
             "configured": True,
             "revision": 1,
         }
@@ -405,14 +441,10 @@ def save_material(root, material):
     return key
 
 
-def for_session(store, sid, profile):
+def _profile_snapshot(store, profile):
     import json
 
     with store.connection() as db:
-        session = store.session(sid, db)
-        selected = db.execute(
-            "SELECT document FROM session_options WHERE session=?", (sid,)
-        ).fetchone()
         if profile.startswith("web:"):
             row = db.execute(
                 "SELECT document,revision FROM coding_profiles WHERE id=?", (profile,)
@@ -468,12 +500,56 @@ def for_session(store, sid, profile):
                 source="native",
                 profile_id=profile or snap["provider"],
             )
+    return snap
+
+
+def for_session(store, sid, profile, preferences=None):
+    import json
+
+    with store.connection() as db:
+        session = store.session(sid, db)
+        selected = db.execute(
+            "SELECT document FROM session_options WHERE session=?", (sid,)
+        ).fetchone()
+    prefs = {**session.get("composer", {}), **(preferences or {})}
+    snap = _profile_snapshot(store, profile)
+    model_profile = prefs.get("model_profile_id")
+    if model_profile and model_profile != snap["profile_id"]:
+        model = _profile_snapshot(store, model_profile)
+        for key in (
+            "provider",
+            "protocol",
+            "endpoint",
+            "model",
+            "thinking",
+            "context_window",
+            "max_output_tokens",
+            "credential_ref",
+            "source",
+            "profile_id",
+            "revision",
+        ):
+            if key in model:
+                snap[key] = model[key]
+            else:
+                snap.pop(key, None)
+    caps = capabilities(snap["model"], snap["protocol"], snap["endpoint"])
+    level = prefs.get("thinking_level", "default")
+    if level not in caps["thinking_levels"]:
+        raise ValueError("所选模型不支持此思考档位")
+    snap.update(vision=caps["vision"], thinking_level=level)
+    if level in ("on", "off"):
+        snap["thinking"] = level == "on"
+    if "permission_mode" in prefs:
+        snap["permission_mode"] = prefs["permission_mode"]
     catalog = extension_catalog(session["directory"], store)
     options = (
         json.loads(selected[0])
         if selected
         else {"skills": [], "mcp": [], "hooks": list(catalog["hooks"])}
     )
+    if "skills" in prefs:
+        options["skills"] = prefs["skills"]
     material = {kind: {} for kind in ("skills", "mcp", "hooks")}
     for kind, items in material.items():
         for name in options.get(kind, []):

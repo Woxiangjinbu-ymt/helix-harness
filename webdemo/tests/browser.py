@@ -337,6 +337,7 @@ def coding_workspace(page):
 
 def coding_onboarding(page):
     import time
+
     from webdemo.tests.coding_fixture import service
 
     calls = []
@@ -1263,6 +1264,148 @@ def coding_provider_error(page):
         print(
             "PASS real endpoint authentication failure", native.name, native.model, sid
         )
+
+
+def coding_composer_controls(page):
+    import threading
+
+    from webdemo.tests.coding_fixture import service
+
+    requests = []
+    release = threading.Event()
+
+    def respond(req, delta):
+        requests.append(req)
+        if len(requests) == 1:
+            release.wait(15)
+        return delta(content="| Model | Result |\n| --- | --- |\n| fixture | done |")
+
+    with service("composer-controls", respond) as (work, repo, url, client):
+        page.goto(url)
+        choose_folder(page, repo)
+        (repo / "proof.txt").write_text("reference-marker-7795")
+        box = page.get_by_role("textbox", name="Message", exact=True)
+        box.fill("first")
+        box.press("Enter")
+        expect(page.get_by_role("button", name="Cancel turn")).to_be_visible()
+        page.get_by_role("button", name="Select model").click()
+        page.get_by_role("dialog").get_by_role("button", name="coding-demo").click()
+        release.set()
+        expect(page.locator("[data-state=completed]")).to_have_count(1, timeout=20000)
+        expect(page.locator(".coding-text table")).to_be_visible()
+        page.get_by_role("button", name="Add attachments").click()
+        page.get_by_role("button", name="Reference project file").click()
+        page.get_by_role("dialog").get_by_role("button", name="proof.txt").click()
+        expect(
+            page.locator("[data-slot=composer] [data-slot=attachment]")
+        ).to_contain_text("proof.txt")
+        page.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator("[data-state=completed]")).to_have_count(2, timeout=20000)
+        expect(page.locator(".coding-text").last).to_contain_text("MewCode Demo")
+        page.get_by_role("button", name="Select model").click()
+        page.get_by_role("dialog").get_by_role("button", name="scripted").click()
+        box.fill("read prior reference")
+        box.press("Enter")
+        expect(page.locator("[data-state=completed]")).to_have_count(3, timeout=20000)
+        assert [r["model"] for r in requests] == ["scripted", "scripted"]
+        assert "reference-marker-7795" in str(requests[-1]["messages"])
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.screenshot(path=str(work / "composer-mobile.png"))
+        for label in ["Select model", "Thinking effort", "Add attachments", "Skills"]:
+            assert page.get_by_role("button", name=label, exact=True).is_visible()
+        assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
+        page.set_viewport_size({"width": 1440, "height": 980})
+        if page.locator("html").get_attribute("data-theme") == "dark":
+            page.get_by_role("button", name="Switch to light theme").click()
+        page.get_by_role("button", name="Switch to dark theme").click()
+        expect(page.locator("html")).to_have_class("dark")
+        page.get_by_role("button", name="Select model").click()
+        page.screenshot(path=str(work / "composer-dark.png"))
+        page.keyboard.press("Escape")
+        # The stylesheet and theme adapter are scoped to the Coding route.
+        page.get_by_role("link", name="RSI Center").click()
+        expect(page.locator("link[href*='styles-']")).to_have_count(0)
+        page.go_back()
+        expect(page.get_by_role("button", name="Select model")).to_be_visible()
+        assert len(client.get("sessions").json()) == 1
+
+
+def coding_composer_real(page):
+    from io import BytesIO
+
+    from PIL import Image
+
+    from webdemo.tests.coding_fixture import service
+
+    with service("composer-real") as (_work, repo, url, client):
+        page.goto(url + "/#coding")
+        box = page.get_by_role("textbox", name="Message", exact=True)
+        page.get_by_role("button", name="Select model").click()
+        page.get_by_role("dialog").get_by_role("button", name="deepseek-flash").click()
+        page.get_by_role("button", name="Thinking effort").click()
+        page.get_by_role("button", name="Off", exact=True).click()
+        page.locator("input[type=file]").set_input_files(
+            {
+                "name": "sample.txt",
+                "mimeType": "text/plain",
+                "buffer": b"Verification code: MICA-728",
+            }
+        )
+        expect(page.locator("[data-slot=attachment]")).to_contain_text("sample.txt")
+        fresh = page.context.new_page()
+        page.close()
+        page = fresh
+        page.goto(url + "/#coding")
+        box = page.get_by_role("textbox", name="Message", exact=True)
+        expect(page.locator("[data-slot=attachment]")).to_contain_text("sample.txt")
+        box.fill("Reply with the verification code in the attachment. No tools.")
+        box.press("Enter")
+        page.get_by_label("Working directory", exact=True).fill(str(repo))
+        page.get_by_role("button", name="Open directory").click()
+        expect(page.locator("[data-state=completed]")).to_have_count(1, timeout=90000)
+        expect(page.locator(".coding-text").last).to_contain_text("MICA-728")
+        page.get_by_role("button", name="Thinking effort").click()
+        page.get_by_role("button", name="Low", exact=True).click()
+        image = BytesIO()
+        Image.new("RGB", (96, 96), (0, 0, 255)).save(image, "PNG")
+        # A literal paste exercises the browser's clipboard file path.
+        import base64
+
+        page.evaluate(
+            """encoded => {
+           const dt = new DataTransfer();
+           dt.items.add(new File([Uint8Array.from(atob(encoded), c=>c.charCodeAt(0))], "sample.png", {type:"image/png"}));
+           document.querySelector("textarea").dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));
+        }""",
+            base64.b64encode(image.getvalue()).decode(),
+        )
+        expect(
+            page.locator("[data-slot=composer] img[alt='sample.png']")
+        ).to_be_visible()
+        box.fill("What color fills this image? Answer one word in English. No tools.")
+        box.press("Enter")
+        expect(page.locator("[data-state=completed]")).to_have_count(2, timeout=90000)
+        assert "blue" in page.locator(".coding-text").last.inner_text().lower()
+        page.reload()
+        expect(page.locator(".coding-user img[alt='sample.png']")).to_be_visible()
+        page.get_by_role("button", name="Thinking effort").click()
+        page.get_by_role("button", name="High", exact=True).click()
+        box.fill("What color was the previous picture? One English word. No tools.")
+        box.press("Enter")
+        expect(page.locator("[data-state=completed]")).to_have_count(3, timeout=90000)
+        assert "blue" in page.locator(".coding-text").last.inner_text().lower()
+        session = "sessions/" + page.url.rsplit("/", 1)[1]
+        view = client.get(session + "/view").json()
+        measured = [
+            e["payload"]
+            for e in view["events"]
+            if e["kind"] == "context" and e["payload"]["source"] == "measured"
+        ]
+        assert len(measured) >= 3 and measured[-1]["used"] > 500, measured
+        page.get_by_role("button", name="Context ·").click()
+        expect(page.get_by_role("dialog")).to_contain_text("Measured by provider")
+        print("Verified provider context", measured[-1], flush=True)
+        assert not list(repo.glob("sample.*"))
 
 
 def main():

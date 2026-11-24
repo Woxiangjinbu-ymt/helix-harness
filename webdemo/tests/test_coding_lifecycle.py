@@ -1541,3 +1541,262 @@ def test_credentials_excluded_from_shell_test_and_transcript(configured, monkeyp
         "local-demo"
         not in (store.root / "sessions" / sid / "history.jsonl").read_text()
     )
+
+
+def test_composer_payload_snapshot_and_private_material(configured, monkeypatch):
+    import io
+    import json
+
+    from PIL import Image
+
+    from webdemo import mock
+
+    client, repo, store, config = configured
+    captured = []
+
+    def reply(req):
+        captured.append(req)
+        return delta(content="ok")
+
+    monkeypatch.setattr(mock, "response", reply)
+    base = "/api/coding"
+    native = json.loads(config.read_text())["providers"][0]
+    chosen = client.post(
+        base + "/profiles",
+        json={
+            "provider": "Second",
+            "model": "gpt-5-mini",
+            "protocol": "openai-compat",
+            "endpoint": native["base_url"],
+            "permission_mode": "bypassPermissions",
+            "api_key": "local-demo",
+        },
+    ).json()["profile_id"]
+
+    def create():
+        return (
+            base
+            + "/sessions/"
+            + client.post(base + "/sessions", json={"directory": str(repo)}).json()[
+                "session_id"
+            ]
+        )
+
+    path, other = create(), create()
+    first = {
+        "text": "Hello",
+        "submit_request_id": str(uuid4()),
+        "permission_mode": "plan",
+    }
+    assert client.post(path + "/turns", json=first).status_code == 202
+    wait_view(client, path, lambda v: v["turns"][-1]["ended"])
+    (repo / "reference.txt").write_text("private-project-reference")
+    reference = client.post(
+        path + "/references/" + str(uuid4()), json={"path": "reference.txt"}
+    ).json()
+    (repo / "reference.txt").write_text(
+        "new version must not replace the staged reference"
+    )
+    external = []
+    for data in (b"external-first", b"external-second"):
+        fid = str(uuid4())
+        r = client.post(
+            path + "/attachments/" + fid, params={"name": "same.txt"}, content=data
+        )
+        assert r.json()["id"] == fid
+        external.append(fid)
+    image = io.BytesIO()
+    Image.new("RGB", (32, 32), "red").save(image, "PNG")
+    fid = str(uuid4())
+    upload = path + "/attachments/" + fid
+    assert (
+        client.post(
+            upload, params={"name": "test.png"}, content=image.getvalue()
+        ).json()["mime"]
+        == "image/png"
+    )
+    assert client.get(other + "/attachments/" + fid).status_code == 404
+    assert (
+        client.post(
+            other + "/turns",
+            json={"submit_request_id": str(uuid4()), "attachment_ids": external},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            path + "/turns",
+            json={"submit_request_id": str(uuid4()), "attachment_ids": [fid]},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            path + "/attachments/" + str(uuid4()),
+            params={"name": "big.txt"},
+            content=b"x" * 66000,
+        ).status_code
+        == 422
+    )
+    assert client.post(
+        path + "/references/" + str(uuid4()), json={"path": "../outside"}
+    ).status_code in (404, 422)
+    assert client.post(
+        upload, params={"name": "test.png"}, content=b"different"
+    ).status_code in (409, 422)
+    form = {
+        "submit_request_id": str(uuid4()),
+        "model_profile_id": chosen,
+        "thinking_level": "low",
+        "attachment_ids": [reference["id"], *external, fid],
+    }
+    receipt = client.post(path + "/turns", json=form)
+    assert receipt.status_code == 202, receipt.text
+    assert client.post(path + "/turns", json=form).json() == receipt.json()
+    assert (
+        client.post(
+            path + "/turns", json={**form, "thinking_level": "high"}
+        ).status_code
+        == 409
+    )
+    view = wait_view(client, path, lambda v: v["turns"][-1]["ended"])
+    assert view["turns"][-1]["state"] == "completed", view["turns"][-1]
+    with store.connection() as db:
+        snapshot = json.loads(
+            db.execute(
+                "SELECT document FROM snapshots WHERE id=?",
+                (receipt.json()["snapshot_id"],),
+            ).fetchone()[0]
+        )
+    assert snapshot["permission_mode"] == "plan"
+    assert snapshot["thinking_level"] == "low"
+    assert snapshot["profile_id"] == chosen
+    assert [r["model"] for r in captured] == ["deterministic", "gpt-5-mini"]
+    assert captured[-1]["reasoning_effort"] == "low"
+    blocks = next(
+        m["content"] for m in captured[-1]["messages"] if isinstance(m["content"], list)
+    )
+    assert blocks[-1]["image_url"]["url"].startswith("data:image/png;base64,")
+    text = "\n".join(b["text"] for b in blocks if b["type"] == "text")
+    assert all(
+        s in text
+        for s in ("private-project-reference", "external-first", "external-second")
+    )
+    assert "private-project-reference" not in json.dumps(view)
+    assert (repo / "reference.txt").read_text().startswith("new version")
+    assert not (repo / "same.txt").exists()
+    assert any(e["kind"] == "context" for e in view["events"])
+
+
+def test_context_uses_last_request_not_turn_total(configured, monkeypatch):
+    import json
+
+    from webdemo import mock
+
+    seen = []
+
+    def respond(handler):
+        seen.append(
+            json.loads(handler.rfile.read(int(handler.headers["Content-Length"])))
+        )
+        first = len(seen) == 1
+        body = (
+            delta(("ReadFile", {"file_path": "test.txt"}))
+            if first
+            else delta(content="ok")
+        )
+        usage = {
+            "prompt_tokens": 100 if first else 160,
+            "completion_tokens": 10 if first else 5,
+            "total_tokens": 110 if first else 165,
+            "prompt_tokens_details": {"cached_tokens": 20},
+        }
+
+        def frame(choices, **extra):
+            data = dict(
+                id="fixture",
+                object="chat.completion.chunk",
+                created=1,
+                model="deterministic",
+                choices=choices,
+                **extra,
+            )
+            return ("data: " + json.dumps(data) + "\n\n").encode()
+
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/event-stream")
+        handler.end_headers()
+        handler.wfile.write(frame([{"index": 0, "delta": body, "finish_reason": None}]))
+        handler.wfile.write(
+            frame(
+                [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "tool_calls" if first else "stop",
+                    }
+                ],
+                usage=usage,
+            )
+        )
+        if first:  # Some gateways repeat the same report on a final empty chunk.
+            handler.wfile.write(frame([], usage=usage))
+        handler.wfile.write(b"data: [DONE]\n\n")
+
+    monkeypatch.setattr(mock.Handler, "do_POST", respond)
+    client, repo, _, _ = configured
+    path = (
+        "/api/coding/sessions/"
+        + client.post("/api/coding/sessions", json={"directory": str(repo)}).json()[
+            "session_id"
+        ]
+    )
+    client.post(
+        path + "/turns", json={"text": "read", "submit_request_id": str(uuid4())}
+    ).raise_for_status()
+    view = wait_view(client, path, lambda v: v["turns"][-1]["ended"])
+    assert view["turns"][-1]["state"] == "completed"
+    context = [e["payload"] for e in view["events"] if e["kind"] == "context"][-1]
+    assert context["source"] == "measured" and context["used"] == 165
+    usage = [e["payload"] for e in view["events"] if e["kind"] == "usage"][-1]
+    assert usage == {"input_tokens": 260, "output_tokens": 15}
+
+
+def test_compact_replay_keeps_owned_images_and_serializes_all_protocols(local):
+    import io
+    from datetime import UTC, datetime
+
+    from PIL import Image
+
+    from mewcode.conversation import ConversationManager
+    from webdemo.coding import attachments
+    from webdemo.coding.model_input import (
+        compact_record,
+        replay,
+        user_record,
+        wire_messages,
+    )
+
+    repo, store = local
+    sid = store.create_session(repo, "")["session_id"]
+    stream = io.BytesIO()
+    Image.new("RGB", (16, 16), "green").save(stream, "PNG")
+    upload = attachments.stage(store, sid, str(uuid4()), "pixel.png", stream.getvalue())
+    with store.connection(True) as db:
+        attachments.bind(db, sid, [upload["id"]], True)
+    data = {"attachment_db": str(store.path), "session_id": sid}
+    source = user_record("Color?", [upload], datetime.now(UTC))
+    messages = replay([source], data, {"vision": True})
+    boundary = compact_record("Earlier discussion", messages)
+    assert "base64" not in boundary.to_jsonl()
+    restored = ConversationManager(history=replay([boundary], data, {"vision": True}))
+    for protocol, kind in [
+        ("anthropic", "image"),
+        ("openai", "input_image"),
+        ("openai-compat", "image_url"),
+    ]:
+        assert wire_messages(restored, protocol)[-1]["content"][-1]["type"] == kind
+    restored = ConversationManager(history=replay([boundary], data, {"vision": False}))
+    assert all(
+        isinstance(m["content"], str) for m in wire_messages(restored, "openai-compat")
+    )
