@@ -1,6 +1,6 @@
 # Coding Agent Workspace 与 RSI Center 开发任务
 
-**状态：已批准。** 2026-11-24 用户批准五个阶段的 116 项任务。依据为已批准的 [产品规格](spec.md) 和 [技术设计](plan.md)。本表用于排定开发和测试工序。所有任务当前均为 `TODO`，表内验证描述的是实施时要取得的结果。
+**状态：已批准。** 2026-11-24 用户批准五个阶段的 116 项任务。依据为已批准的 [产品规格](spec.md) 和 [技术设计](plan.md)。本表用于排定开发和测试工序。各行标示当前实施状态，已执行的验收记录见本文件和 checklist.md。
 
 ## 执行顺序与状态
 
@@ -18,7 +18,7 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 
 ## 文件清单
 
-路径相对 MewCode 项目根目录。任务表中 Web 后端短路径相对 `webdemo/`，`src/` 路径相对 `webdemo/frontend/`，`webdemo/tests/`、`mewcode/`、`tests/rsi/` 和 `docs/` 均从项目根目录起算。`checklist.md` 在下一审批阶段编制，实施时用于写入验收结果。
+路径相对 MewCode 项目根目录。任务表中 Web 后端短路径相对 `webdemo/`，`src/` 路径相对 `webdemo/frontend/`，`webdemo/tests/`、`mewcode/`、`tests/rsi/` 和 `docs/` 均从项目根目录起算。`checklist.md` 已批准，用于逐项登记验收结果。
 
 | 文件操作 | 职责 | 文件 |
 | --- | --- | --- |
@@ -57,56 +57,56 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 | T101 · 留下升级前的对照 | 文档批准 | `webdemo/tests/recovery.py`。在改动入口前，用旧版本在隔离目录保存可恢复的原生会话样本、冻结发布标识、旧作业 ID 和只读归档副本的清单。记录轨迹、回执、快照、产物摘要及分数、版本、来源。 | 用原标识打开各样本，独立读取副本得到相同摘要，保留基线供 T513 比对。（AC26） | DONE |
 | T102 · 分离旧作业路由 | T101 | `api.py`、`rsi_api.py`。将现有 RSI 路由登记移到独立路由组，保留旧路径和本机写请求校验。 | 用旧作业 ID 查详情和事件仍成功，来自非受信来源的写请求返回 403。（AC05、AC26） | DONE |
 | T103 · 隔离 RSI 启动资源 | T102 | `api.py`、`rsi_api.py`、`mock.py`。将旧作业库、归档探测和 Mock 服务的启动移到对应业务首次需要的入口。区分应用存活与实验设施状态。 | 禁用评分设施与 Mock 后启动 webdemo.api:app，基础服务仍响应，访问受影响的实验操作才显示原因。（AC19、AC25） | DONE |
-| T104 · 登记实际工作树 | 阶段入口 | `coding/worktrees.py`、`coding/store.py`。从起始目录解析 Git 根与专属 Git 管理目录，以规范路径及设备、文件序号查登记，保留相对起始目录。 | 登记根、子目录和路径别名得到同一工作树 ID，登记同仓库的另一 linked worktree 得到另一 ID。（AC01、AC06） | TODO |
-| T105 · 限制路径解析 | T104 | `coding/worktrees.py`。为现存文件和新目标父目录实现授权范围检查，打开目录或写入前复核真实目标。 | 在临时仓库试普通路径及指向范围外的链接，合法读写成功，越界目标与目录清单保持原值。（AC23） | TODO |
-| T106 · 列出和搜索当前文件 | T105 | `coding/worktrees.py`、`coding/routes.py`。对已登记工作目录提供列表、读取、按名称及内容搜索，包括仍未提交的文件。 | 按名称和文件内的独有文字搜索同一未跟踪文件，结果路径一致，读取与磁盘字节相同。（AC03、AC23） | TODO |
-| T107 · 读取工作树差异 | T105 | `coding/worktrees.py`、`coding/routes.py`。返回新增、修改、删除和暂存状态与逐文件差异，使用工作树中的新文件内容。 | 预置暂存及未暂存修改、未跟踪文件和删除项，逐项核对 Git 状态、索引与工作树差异。（AC03） | TODO |
+| T104 · 登记实际工作树 | 阶段入口 | `coding/worktrees.py`、`coding/store.py`。从起始目录解析 Git 根与专属 Git 管理目录，以规范路径及设备、文件序号查登记，保留相对起始目录。 | 登记根、子目录和路径别名得到同一工作树 ID，登记同仓库的另一 linked worktree 得到另一 ID。（AC01、AC06） | DONE |
+| T105 · 限制路径解析 | T104 | `coding/worktrees.py`。为现存文件和新目标父目录实现授权范围检查，打开目录或写入前复核真实目标。 | 在临时仓库试普通路径及指向范围外的链接，合法读写成功，越界目标与目录清单保持原值。（AC23） | DONE |
+| T106 · 列出和搜索当前文件 | T105 | `coding/worktrees.py`、`coding/routes.py`。对已登记工作目录提供列表、读取、按名称及内容搜索，包括仍未提交的文件。 | 按名称和文件内的独有文字搜索同一未跟踪文件，结果路径一致，读取与磁盘字节相同。（AC03、AC23） | DONE |
+| T107 · 读取工作树差异 | T105 | `coding/worktrees.py`、`coding/routes.py`。返回新增、修改、删除和暂存状态与逐文件差异，使用工作树中的新文件内容。 | 预置暂存及未暂存修改、未跟踪文件和删除项，逐项核对 Git 状态、索引与工作树差异。（AC03） | DONE |
 
 ### 普通会话、轮次与事件
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T108 · 建会话与轮次表 | T104 | `coding/models.py`、`coding/store.py`。定义 CodingSession、CodingTurn 及绑定关系，在仓库外的 Coding 数据目录建表，限制一个会话仅一条未结束轮次。 | 用两个连接同时插入同会话活动轮次，仅一条成功。关闭再打开库，原目录绑定仍可查询。（AC01、AC22） | TODO |
-| T109 · 保存事件序号 | T108 | `coding/models.py`、`coding/store.py`。为 CodingEvent 实现会话内 seq 分配、source_id 去重、轮次归属检查和提交后通知。 | 重送同一来源事件得到原序号。两个会话各自有序，事务回滚时订阅者收不到事件。（AC04、AC08） | TODO |
-| T110 · 保存操作回执 | T108 | `coding/store.py`。按对象及请求 ID 保存规范化载荷与结果，由调用方与业务变更共用事务，先查回执再查可变状态。 | 同 ID 同载荷在对象结束后仍读到原结果。异载荷冲突，事务中断后没有孤立回执。（AC22） | TODO |
-| T111 · 固定轮次模型配置 | T108 | `providers.py`、`coding/profiles.py`、`coding/models.py`。复用原生配置解析与客户端工厂，为首个可用 Coding 配置生成 `CodingConfigSnapshot`，持久化无秘密的规范内容及摘要。 | 相同内容两次得到同一 snapshot_id，切换模型得到新摘要。旧内容可查，密钥标记在快照内匹配零次。（AC02、AC11、AC24） | TODO |
-| T112 · 创建与重开会话 | T103、T104、T108、T111 | `coding/routes.py`、`coding/manager.py`、`coding/store.py`。按仓库创建、列出和打开会话，在新轮执行前复核目录身份，找不到原目录时保留可读历史。 | 为 A、B 各建会话，移动 A 并在原位置换另一仓库，重开 A 仍可读历史，无法在替代目录提交执行。（AC01） | TODO |
-| T113 · 原子受理轮次 | T109、T110、T111、T112 | `coding/manager.py`、`coding/store.py`。用一次事务保存 submit_request_id、用户消息、固定快照、轮次及受理事件，提交后才可调度。 | 同一次提交重复得到原 turn_id 且用户消息只有一条。不同文本复用 ID 及另一活动提交分别返回冲突。（AC02、AC22） | TODO |
-| T114 · 建立会话进程通道 | T113 | `coding/worker.py`、`coding/manager.py`。按会话启动专属工作进程，绑定 cwd、worker_instance_id 与私有双向通道，检查消息归属。 | 并发启动两个临时会话，进程身份和工作目录分别正确。发自过期通道的事件无法追加。（AC19） | TODO |
-| T115 · 确认执行接手 | T114 | `coding/worker.py`、`coding/runtime_adapter.py`、`coding/manager.py`。实现 start_turn 和接手应答。适配器收到持久化接手确认再进入 Agent.run，重送接手通知沿用 source_id。 | 丢弃一次接手应答，观察同实例重送，模型入口计数为一。接手前退出时无模型调用。（AC10、AC22） | TODO |
-| T116 · 接回原生对话 | T115 | `coding/runtime_adapter.py`、`mewcode/memory/session.py`。按 history_cursor 解码原生消息，使用仓库外的会话记录及长输出目录，装配 Agent.run 所需对话。 | 用记录输入核对第二轮上下文中首轮消息及新用户消息各一次，超长工具输出可从本会话目录回读。（AC02、AC09） | TODO |
-| T117 · 保存实际模型事件 | T109、T116 | `coding/runtime_adapter.py`、`coding/manager.py`。将文本片段和定稿关联到同一 message_id，仅转发 Runtime 实际发布的可展示思考、工具、用量和错误。 | 注入有、无可展示思考的原生事件序列，检查消息只定稿一次、思考记录数与来源相同。（AC02、AC04） | TODO |
+| T108 · 建会话与轮次表 | T104 | `coding/models.py`、`coding/store.py`。定义 CodingSession、CodingTurn 及绑定关系，在仓库外的 Coding 数据目录建表，限制一个会话仅一条未结束轮次。 | 用两个连接同时插入同会话活动轮次，仅一条成功。关闭再打开库，原目录绑定仍可查询。（AC01、AC22） | DONE |
+| T109 · 保存事件序号 | T108 | `coding/models.py`、`coding/store.py`。为 CodingEvent 实现会话内 seq 分配、source_id 去重、轮次归属检查和提交后通知。 | 重送同一来源事件得到原序号。两个会话各自有序，事务回滚时订阅者收不到事件。（AC04、AC08） | DONE |
+| T110 · 保存操作回执 | T108 | `coding/store.py`。按对象及请求 ID 保存规范化载荷与结果，由调用方与业务变更共用事务，先查回执再查可变状态。 | 同 ID 同载荷在对象结束后仍读到原结果。异载荷冲突，事务中断后没有孤立回执。（AC22） | DONE |
+| T111 · 固定轮次模型配置 | T108 | `providers.py`、`coding/profiles.py`、`coding/models.py`。复用原生配置解析与客户端工厂，为首个可用 Coding 配置生成 `CodingConfigSnapshot`，持久化无秘密的规范内容及摘要。 | 相同内容两次得到同一 snapshot_id，切换模型得到新摘要。旧内容可查，密钥标记在快照内匹配零次。（AC02、AC11、AC24） | DONE |
+| T112 · 创建与重开会话 | T103、T104、T108、T111 | `coding/routes.py`、`coding/manager.py`、`coding/store.py`。按仓库创建、列出和打开会话，在新轮执行前复核目录身份，找不到原目录时保留可读历史。 | 为 A、B 各建会话，移动 A 并在原位置换另一仓库，重开 A 仍可读历史，无法在替代目录提交执行。（AC01） | DONE |
+| T113 · 原子受理轮次 | T109、T110、T111、T112 | `coding/manager.py`、`coding/store.py`。用一次事务保存 submit_request_id、用户消息、固定快照、轮次及受理事件，提交后才可调度。 | 同一次提交重复得到原 turn_id 且用户消息只有一条。不同文本复用 ID 及另一活动提交分别返回冲突。（AC02、AC22） | DONE |
+| T114 · 建立会话进程通道 | T113 | `coding/worker.py`、`coding/manager.py`。按会话启动专属工作进程，绑定 cwd、worker_instance_id 与私有双向通道，检查消息归属。 | 并发启动两个临时会话，进程身份和工作目录分别正确。发自过期通道的事件无法追加。（AC19） | DONE |
+| T115 · 确认执行接手 | T114 | `coding/worker.py`、`coding/runtime_adapter.py`、`coding/manager.py`。实现 start_turn 和接手应答。适配器收到持久化接手确认再进入 Agent.run，重送接手通知沿用 source_id。 | 丢弃一次接手应答，观察同实例重送，模型入口计数为一。接手前退出时无模型调用。（AC10、AC22） | DONE |
+| T116 · 接回原生对话 | T115 | `coding/runtime_adapter.py`、`mewcode/memory/session.py`。按 history_cursor 解码原生消息，使用仓库外的会话记录及长输出目录，装配 Agent.run 所需对话。 | 用记录输入核对第二轮上下文中首轮消息及新用户消息各一次，超长工具输出可从本会话目录回读。（AC02、AC09） | DONE |
+| T117 · 保存实际模型事件 | T109、T116 | `coding/runtime_adapter.py`、`coding/manager.py`。将文本片段和定稿关联到同一 message_id，仅转发 Runtime 实际发布的可展示思考、工具、用量和错误。 | 注入有、无可展示思考的原生事件序列，检查消息只定稿一次、思考记录数与来源相同。（AC02、AC04） | DONE |
 
 ### 工具授权与工作树写入
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T118 · 绑定并行工具调用 | T115 | `coding/runtime_adapter.py`、`coding/actions.py`。在原生直接执行及需询问的分派路径传递实际工具 ID、迭代位置与 call_id，遇到歧义停止该调用。 | 并行运行两个同名调用，一成一败，结果分别带原 call_id，错误只落在失败项。（AC04、AC05） | TODO |
-| T119 · 登记待授权操作 | T109、T118 | `coding/manager.py`、`coding/runtime_adapter.py`、`coding/store.py`。实现 request_permission，将原生 Future 与实例、调用、目标、范围绑定，事务内登记等待状态。 | 刷新视图可用同一 permission_id 查询原目标。目标没有磁盘变化，重送登记只产生一项等待。（AC05） | TODO |
-| T120 · 交付权限答复 | T110、T119 | `coding/routes.py`、`coding/manager.py`、`coding/runtime_adapter.py`。实现 reply 与 deliver_reply，依次记录决定、交给原 Future、确认交付。记录允许范围与拒绝反馈。 | 跨会话、已失效或相反答复被拒。有效答复重送只唤醒一次，拒绝理由回到原调用。（AC05、AC22） | TODO |
-| T121 · 原子取得写入权 | T104、T108、T110 | `coding/models.py`、`coding/store.py`、`coding/manager.py`。实现 WorktreeWriteLease 的 free、held、draining 及递增 generation，将持有轮次和执行实例绑定到实际树。 | 用两个连接按别名竞争同一树仅一个成功，另一方得到持有会话。只读查看和另一树写入可继续。（AC06） | TODO |
-| T122 · 在派发前登记动作 | T118、T120、T121 | `coding/actions.py`、`coding/manager.py`、`coding/store.py`。实现 begin_action，将动作 ID、范围、权限、写入权和执行意图一次提交。读动作核验范围，未知效果按可写处理。 | 让事务失败、许可应答丢失、同一许可被消费后重送。前者无派发，其余动作的实际执行次数至多一。（AC06、AC10、AC25） | TODO |
-| T123 · 在执行入口复核策略 | T105、T122 | `coding/actions.py`、`coding/runtime_adapter.py`。文件及 Shell 入口复核沙箱、强制拒绝、许可代号与当前目标。需新授权时先结束未派发动作，再以新动作申请。 | 沙箱不可用和规则收紧时命令未启动。补获有效授权后只产生一次预期文件修改。（AC05、AC23） | TODO |
-| T124 · 检测外部编辑 | T123 | `coding/actions.py`、`coding/worktrees.py`。读取时留存目标内容版本，编辑与删除前比对实际内容。内容变化时要求重新读取。 | 在读到写之间由编辑器修改同文件，记录显示重新读取先于新写操作，外部改动可核对。（AC03、AC06） | TODO |
-| T125 · 约束扩展与授权规则写入 | T122、T123 | `coding/actions.py`、`coding/runtime_adapter.py`。将前后置 Hook、扩展及持续授权规则保存接入相同动作许可。规则写入成功后才记录持续生效。 | 前置 Hook 与主调用分别有许可。另一会话持有写入权时扩展不能写，规则保存失败时界面无持续生效记录。（AC05、AC06） | TODO |
-| T126 · 监督可写子进程 | T122 | `coding/worker.py`、`coding/actions.py`。在启动 Shell、Hook 等子进程前登记所属轮次，保存进程组与启动身份，通过监管通道获取退出证据。 | 在临时仓库启动父进程先退出、子进程仍写的测试命令。管理器仍识别存活子进程及所属轮次。（AC06、AC07） | TODO |
-| T127 · 凭清理证据释放写入权 | T121、T125、T126 | `coding/actions.py`、`coding/manager.py`、`coding/store.py`。实现 end_action 的结果去重。同代全部可写动作和后代结束才释放，迟到的旧代应答丢弃。 | 先交回工具输出再结束子进程，第二会话只在后者结束后能写。重送旧释放消息不影响新代。（AC06、AC07） | TODO |
-| T128 · 隔离模型凭据与工具环境 | T111、T123、T125 | `coding/worker.py`、`coding/runtime_adapter.py`、`providers.py`。仅向对应模型客户端交付凭据，向 Shell、测试、Hook、MCP 子进程提供清理过的环境和允许的显式配置。 | 用识别标记请求测试 Provider，再从项目命令和扩展子进程读取环境，只有目标 Provider 收到标记。（AC24） | TODO |
+| T118 · 绑定并行工具调用 | T115 | `coding/runtime_adapter.py`、`coding/actions.py`。在原生直接执行及需询问的分派路径传递实际工具 ID、迭代位置与 call_id，遇到歧义停止该调用。 | 并行运行两个同名调用，一成一败，结果分别带原 call_id，错误只落在失败项。（AC04、AC05） | DONE |
+| T119 · 登记待授权操作 | T109、T118 | `coding/manager.py`、`coding/runtime_adapter.py`、`coding/store.py`。实现 request_permission，将原生 Future 与实例、调用、目标、范围绑定，事务内登记等待状态。 | 刷新视图可用同一 permission_id 查询原目标。目标没有磁盘变化，重送登记只产生一项等待。（AC05） | DONE |
+| T120 · 交付权限答复 | T110、T119 | `coding/routes.py`、`coding/manager.py`、`coding/runtime_adapter.py`。实现 reply 与 deliver_reply，依次记录决定、交给原 Future、确认交付。记录允许范围与拒绝反馈。 | 跨会话、已失效或相反答复被拒。有效答复重送只唤醒一次，拒绝理由回到原调用。（AC05、AC22） | DONE |
+| T121 · 原子取得写入权 | T104、T108、T110 | `coding/models.py`、`coding/store.py`、`coding/manager.py`。实现 WorktreeWriteLease 的 free、held、draining 及递增 generation，将持有轮次和执行实例绑定到实际树。 | 用两个连接按别名竞争同一树仅一个成功，另一方得到持有会话。只读查看和另一树写入可继续。（AC06） | DONE |
+| T122 · 在派发前登记动作 | T118、T120、T121 | `coding/actions.py`、`coding/manager.py`、`coding/store.py`。实现 begin_action，将动作 ID、范围、权限、写入权和执行意图一次提交。读动作核验范围，未知效果按可写处理。 | 让事务失败、许可应答丢失、同一许可被消费后重送。前者无派发，其余动作的实际执行次数至多一。（AC06、AC10、AC25） | DONE |
+| T123 · 在执行入口复核策略 | T105、T122 | `coding/actions.py`、`coding/runtime_adapter.py`。文件及 Shell 入口复核沙箱、强制拒绝、许可代号与当前目标。需新授权时先结束未派发动作，再以新动作申请。 | 沙箱不可用和规则收紧时命令未启动。补获有效授权后只产生一次预期文件修改。（AC05、AC23） | DONE |
+| T124 · 检测外部编辑 | T123 | `coding/actions.py`、`coding/worktrees.py`。读取时留存目标内容版本，编辑与删除前比对实际内容。内容变化时要求重新读取。 | 在读到写之间由编辑器修改同文件，记录显示重新读取先于新写操作，外部改动可核对。（AC03、AC06） | DONE |
+| T125 · 约束扩展与授权规则写入 | T122、T123 | `coding/actions.py`、`coding/runtime_adapter.py`。将前后置 Hook、扩展及持续授权规则保存接入相同动作许可。规则写入成功后才记录持续生效。 | 前置 Hook 与主调用分别有许可。另一会话持有写入权时扩展不能写，规则保存失败时界面无持续生效记录。（AC05、AC06） | DONE |
+| T126 · 监督可写子进程 | T122 | `coding/worker.py`、`coding/actions.py`。在启动 Shell、Hook 等子进程前登记所属轮次，保存进程组与启动身份，通过监管通道获取退出证据。 | 在临时仓库启动父进程先退出、子进程仍写的测试命令。管理器仍识别存活子进程及所属轮次。（AC06、AC07） | DONE |
+| T127 · 凭清理证据释放写入权 | T121、T125、T126 | `coding/actions.py`、`coding/manager.py`、`coding/store.py`。实现 end_action 的结果去重。同代全部可写动作和后代结束才释放，迟到的旧代应答丢弃。 | 先交回工具输出再结束子进程，第二会话只在后者结束后能写。重送旧释放消息不影响新代。（AC06、AC07） | DONE |
+| T128 · 隔离模型凭据与工具环境 | T111、T123、T125 | `coding/worker.py`、`coding/runtime_adapter.py`、`providers.py`。仅向对应模型客户端交付凭据，向 Shell、测试、Hook、MCP 子进程提供清理过的环境和允许的显式配置。 | 用识别标记请求测试 Provider，再从项目命令和扩展子进程读取环境，只有目标 Provider 收到标记。（AC24） | DONE |
 
 ### Web 入口与首轮编程
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T129 · 提交整轮终态 | T117、T127 | `coding/runtime_adapter.py`、`coding/manager.py`、`coding/store.py`。实现 finish_turn，核对最后来源序号、整个 Agent.run 返回值及清理证据，条件提交一次终态事件。 | 让原生 TurnComplete 后继续调用第二个工具，Web 仍运行。整轮退出后刷新两页只看到同一终态。（AC04、AC22） | TODO |
-| T130 · 接通提交与实时订阅 | T113、T117、T120、T124、T125、T127、T128、T129 | `api.py`、`coding/routes.py`。装配 Coding 路由。挂接 POST /turns、授权答复、GET /view 和 GET /events，提供首屏读快照及提交后增量，沿用本机访问和归属校验。 | 真实服务接收本地请求返回 202，结束前已有已提交片段。错误来源、错配父子对象、存储失败分别返回 403、404、503。（AC02、AC05、AC25） | TODO |
-| T131 · 设定默认工作台路由 | T112、T130 | `src/main.tsx`、`src/lib/workspaceContext.tsx`、`src/pages/CodingWorkspace.tsx`。将默认、新会话与 `#coding/<session_id>` 路由到普通工作台。把公开题选择限定在 RSI，保留 `#workspace/<job_id>`。 | 分别直达空地址、Coding 会话和旧作业链接，网络请求和渲染记录属于各自业务，普通首页无需实验健康探测。（AC01、AC19、AC26） | TODO |
-| T132 · 接入会话选择与输入 | T130、T131 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`。侧栏选择目录、新建与重开会话。发送时复用单次操作 ID，中心输入框按会话保存草稿。 | 在两个仓库之间切换再返回，原目录、会话与未发送草稿正确。双击提交只出现一个轮次。（AC01、AC02、AC22） | TODO |
-| T133 · 按调用渲染时间线 | T117、T118、T130、T132 | `src/pages/CodingWorkspace.tsx`、`src/components/CodingTimeline.tsx`、`src/lib/coding.ts`。按消息和调用身份归并事件，显示真实文本、可用思考、参数、工具结果和授权卡片，提供三种现有授权决定。 | 用两次并行同名调用与一项需询问操作打开详情，原参数、权限范围和结果逐项相符。（AC04、AC05） | TODO |
-| T134 · 显示终端与测试证据 | T126、T133 | `coding/actions.py`、`src/components/CodingTimeline.tsx`。把每次 Shell 的实际命令、cwd、输出、退出状态连到调用卡片。无可靠结论时显示结果未知。 | 依次运行失败测试、修复后重跑和无可靠测试结论的命令，三个视图与原始输出、退出证据一致。（AC02、AC04） | TODO |
-| T135 · 连接文件与差异面板 | T106、T107、T132 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/styles/pages.css`。复用 CodeViewer、DiffViewer 连接浏览、搜索和逐文件 Git 差异。按需展开工具、终端和文件面板。 | 打开暂存与未暂存文件、切换详情再收起，内容和 Git 相符，输入草稿仍在。（AC01、AC03） | TODO |
-| T136 · 生成本轮摘要 | T124、T133、T134、T135 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`。从调用记录汇总测试、未完成项和能归属的变更。对外部混合编辑标明来源未确定。 | 对同文件混合编辑，核对仓库总览含全部修改，本轮摘要的每个确定项都能打开相应调用。（AC03、AC04） | TODO |
-| T137 · 对齐工作台两种语言 | T133、T134、T135、T136 | `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/pages/CodingWorkspace.tsx`。补齐会话、权限、冲突、未知与失败状态的中英文键，并接入原语言切换。 | 切换两种语言并构建。同一调用状态和权限范围在两个界面均可识别。（AC01、AC04、AC05） | TODO |
-| T138 · 验收第一阶段 | 本阶段全部前项 | `webdemo/tests/browser.py`、`webdemo/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | TODO |
+| T129 · 提交整轮终态 | T117、T127 | `coding/runtime_adapter.py`、`coding/manager.py`、`coding/store.py`。实现 finish_turn，核对最后来源序号、整个 Agent.run 返回值及清理证据，条件提交一次终态事件。 | 让原生 TurnComplete 后继续调用第二个工具，Web 仍运行。整轮退出后刷新两页只看到同一终态。（AC04、AC22） | DONE |
+| T130 · 接通提交与实时订阅 | T113、T117、T120、T124、T125、T127、T128、T129 | `api.py`、`coding/routes.py`。装配 Coding 路由。挂接 POST /turns、授权答复、GET /view 和 GET /events，提供首屏读快照及提交后增量，沿用本机访问和归属校验。 | 真实服务接收本地请求返回 202，结束前已有已提交片段。错误来源、错配父子对象、存储失败分别返回 403、404、503。（AC02、AC05、AC25） | DONE |
+| T131 · 设定默认工作台路由 | T112、T130 | `src/main.tsx`、`src/lib/workspaceContext.tsx`、`src/pages/CodingWorkspace.tsx`。将默认、新会话与 `#coding/<session_id>` 路由到普通工作台。把公开题选择限定在 RSI，保留 `#workspace/<job_id>`。 | 分别直达空地址、Coding 会话和旧作业链接，网络请求和渲染记录属于各自业务，普通首页无需实验健康探测。（AC01、AC19、AC26） | IN_PROGRESS |
+| T132 · 接入会话选择与输入 | T130、T131 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`。侧栏选择目录、新建与重开会话。发送时复用单次操作 ID，中心输入框按会话保存草稿。 | 在两个仓库之间切换再返回，原目录、会话与未发送草稿正确。双击提交只出现一个轮次。（AC01、AC02、AC22） | IN_PROGRESS |
+| T133 · 按调用渲染时间线 | T117、T118、T130、T132 | `src/pages/CodingWorkspace.tsx`、`src/components/CodingTimeline.tsx`、`src/lib/coding.ts`。按消息和调用身份归并事件，显示真实文本、可用思考、参数、工具结果和授权卡片，提供三种现有授权决定。 | 用两次并行同名调用与一项需询问操作打开详情，原参数、权限范围和结果逐项相符。（AC04、AC05） | IN_PROGRESS |
+| T134 · 显示终端与测试证据 | T126、T133 | `coding/actions.py`、`src/components/CodingTimeline.tsx`。把每次 Shell 的实际命令、cwd、输出、退出状态连到调用卡片。无可靠结论时显示结果未知。 | 依次运行失败测试、修复后重跑和无可靠测试结论的命令，三个视图与原始输出、退出证据一致。（AC02、AC04） | IN_PROGRESS |
+| T135 · 连接文件与差异面板 | T106、T107、T132 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/styles/pages.css`。复用 CodeViewer、DiffViewer 连接浏览、搜索和逐文件 Git 差异。按需展开工具、终端和文件面板。 | 打开暂存与未暂存文件、切换详情再收起，内容和 Git 相符，输入草稿仍在。（AC01、AC03） | IN_PROGRESS |
+| T136 · 生成本轮摘要 | T124、T133、T134、T135 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`。从调用记录汇总测试、未完成项和能归属的变更。对外部混合编辑标明来源未确定。 | 对同文件混合编辑，核对仓库总览含全部修改，本轮摘要的每个确定项都能打开相应调用。（AC03、AC04） | IN_PROGRESS |
+| T137 · 对齐工作台两种语言 | T133、T134、T135、T136 | `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/pages/CodingWorkspace.tsx`。补齐会话、权限、冲突、未知与失败状态的中英文键，并接入原语言切换。 | 切换两种语言并构建。同一调用状态和权限范围在两个界面均可识别。（AC01、AC04、AC05） | IN_PROGRESS |
+| T138 · 验收第一阶段 | 本阶段全部前项 | `webdemo/tests/browser.py`、`webdemo/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | IN_PROGRESS |
 
 ## Phase 2 · Coding 稳定性与日常使用
 

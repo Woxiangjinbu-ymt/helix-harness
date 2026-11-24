@@ -1,0 +1,313 @@
+"""将原生 Agent 的真实事件与执行入口绑定到所属 Web 调用。"""
+
+import asyncio
+import json
+import os
+import re
+import sys
+from contextvars import ContextVar
+from dataclasses import asdict
+from pathlib import Path
+
+from mewcode import agent as native
+from mewcode.config import ProviderConfig
+from mewcode.conversation import ConversationManager
+from mewcode.hooks.engine import HookEngine, HookNotification
+from mewcode.hooks.loader import load_hooks
+from mewcode.hooks.models import ToolRejectedError
+from mewcode.memory.session import (
+    SessionRecord,
+    make_compact_boundary,
+    records_to_messages,
+)
+from mewcode.permissions import (
+    DangerousCommandDetector,
+    Decision,
+    PathSandbox,
+    PermissionChecker,
+    PermissionMode,
+    RuleEngine,
+)
+from mewcode.permissions.rules import extract_content
+from mewcode.tools import ToolRegistry
+from mewcode.tools.base import Tool, ToolResult
+from webdemo import providers
+
+from .store import uid
+from .worker import MAX_FRAME, Channel
+
+current_call = ContextVar("coding_call")
+
+
+def checker(directory, mode, local_rules, sandbox):
+    class Rules(RuleEngine):
+        def snapshot(self):
+            return (
+                super().snapshot() + RuleEngine(local_rules_path=local_rules).snapshot()
+            )
+
+    root = Path(directory)
+    rules = Rules(
+        user_rules_path=Path.home() / ".mewcode/permissions.yaml",
+        project_rules_path=root / ".mewcode/permissions.yaml",
+        local_rules_path=root / ".mewcode/permissions.local.yaml",
+    )
+
+    class WebChecker(PermissionChecker):
+        def check(self, tool, args):
+            observed = self.rule_engine.evaluate(
+                tool.name, extract_content(tool.name, args)
+            )
+            decision = super().check(tool, args)
+            if observed == "deny" or decision.effect == "deny":
+                return Decision(
+                    "deny", "策略禁止执行" if observed == "deny" else decision.reason
+                )
+            if observed == "ask":
+                return Decision("ask", "策略要求本次确认")
+            return decision
+
+    return WebChecker(
+        DangerousCommandDetector(),
+        PathSandbox(str(root)),
+        rules,
+        PermissionMode(mode),
+        sandbox_enabled=sandbox["enabled"] and sandbox["auto_allow"],
+    )
+
+
+class RoutedHooks(HookEngine):
+    def __init__(self, definitions, channel):
+        super().__init__(load_hooks(definitions))
+        self.channel = channel
+
+    async def invoke(self, hook):
+        result = await self.channel.request(
+            "hook", hook_id=hook.id, event=hook.event, parent_call=current_call.get()
+        )
+        self._notifications.append(
+            HookNotification(
+                hook.id, hook.event, result["output"], not result["is_error"]
+            )
+        )
+        return result
+
+    async def _run_single(self, hook, ctx):
+        await self.invoke(hook)
+
+    async def run_pre_tool_hooks(self, ctx):
+        for hook in self.find_matching_hooks("pre_tool_use", ctx):
+            hook.mark_executed()
+            result = await self.invoke(hook)
+            if hook.reject or result["is_error"]:
+                return ToolRejectedError(ctx.tool_name, result["output"], hook.id)
+        return None
+
+
+class RoutedTool(Tool):
+    def __init__(self, tool, channel):
+        self.name, self.category = tool.name, tool.category
+        self.description, self.params_model = tool.description, tool.params_model
+        self.channel = channel
+
+    async def execute(self, params):
+        response = await self.channel.request(
+            "action",
+            call_id=current_call.get(),
+            action_id=uid(),
+            tool=self.name,
+            args=params.model_dump(),
+        )
+        return ToolResult(response["output"], is_error=response["is_error"])
+
+
+class WebAgent(native.Agent):
+    def __init__(self, *, private_dir, **kwargs):
+        super().__init__(**kwargs)
+        self.private_dir = private_dir
+        self.calls = {}
+
+    @property
+    def session_dir(self):
+        return self.private_dir / "tool-results"
+
+    @property
+    def _transcript_path(self):
+        return str(self.private_dir / "history.jsonl")
+
+    async def _execute_single_tool_direct(self, tc):
+        token = current_call.set(self.calls[tc.tool_id])
+        try:
+            return await super()._execute_single_tool_direct(tc)
+        finally:
+            current_call.reset(token)
+
+    async def _execute_tool(self, tc):
+        token = current_call.set(self.calls[tc.tool_id])
+        try:
+            async for item in super()._execute_tool(tc):
+                yield item
+        finally:
+            current_call.reset(token)
+
+    def _snapshot_for_recovery(self, tc, result):
+        # 回读也要走受管的文件入口，避免原生恢复旁路再打开同一个路径。
+        if tc.tool_name == "ReadFile" and not result.is_error:
+            self.recovery_state.record_file_read(
+                tc.arguments.get("file_path", ""), result.output
+            )
+
+
+async def run(data, channel):
+    from mewcode.tools.base import MAX_OUTPUT_CHARS
+    from mewcode.tools.bash import Bash
+    from mewcode.tools.edit_file import EditFile
+    from mewcode.tools.glob import Glob
+    from mewcode.tools.grep import Grep
+    from mewcode.tools.read_file import ReadFile
+    from mewcode.tools.write_file import WriteFile
+
+    snap = data["snapshot"]
+    directory = Path(data["directory"])
+    os.chdir(directory)
+    supplied = ProviderConfig(
+        snap["provider"],
+        snap["protocol"],
+        snap["endpoint"],
+        snap["model"],
+        api_key=data.pop("credential"),
+        thinking=snap["thinking"],
+        context_window=snap["context_window"],
+        max_output_tokens=snap["max_output_tokens"],
+    )
+    registry = ToolRegistry()
+    for cls in (ReadFile, EditFile, WriteFile, Glob, Grep, Bash):
+        registry.register(RoutedTool(cls(), channel))
+    private = Path(data["private_dir"])
+    (private / "tool-results").mkdir(mode=0o700, parents=True, exist_ok=True)
+    agent = WebAgent(
+        client=providers.client(supplied),
+        registry=registry,
+        protocol=supplied.protocol,
+        work_dir=str(directory),
+        private_dir=private,
+        max_iterations=snap["budget"]["max_iterations"],
+        hook_engine=RoutedHooks(data["hooks"], channel) if data.get("hooks") else None,
+        permission_checker=checker(
+            data["root"], snap["permission_mode"], Path(data["rules"]), snap["sandbox"]
+        ),
+        context_window=snap["context_window"],
+        instructions_content=data["instructions"],
+    )
+    agent.session_id = data["session_id"]
+    records = [SessionRecord.from_jsonl(x) for x in data["history"]]
+    boundary = max(
+        (i for i, r in enumerate(records) if r.is_compact_boundary()), default=0
+    )
+    conv = ConversationManager(history=records_to_messages(records[boundary:]))
+    for msg in conv.history:
+        msg.persisted = True
+    history_file = private / "history.jsonl"
+    history_file.write_text("".join(r.to_jsonl() + "\n" for r in records))
+    await channel.request("ready")
+    message = uid()
+    failure = None
+
+    async def emit(kind, **payload):
+        await channel.request("event", event=kind, value=payload)
+
+    async def persist(record):
+        serialized = record.to_jsonl()
+        await emit("native_record", record=serialized)
+        if record.role == "assistant" and not record.is_compact_boundary():
+            await emit("message_final", message_id=message)
+        with history_file.open("a") as stream:
+            stream.write(serialized + "\n")
+
+    async for ev in agent.run(conv):
+        if isinstance(ev, native.ToolUseEvent):
+            if (
+                not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", ev.tool_id)
+                or ev.tool_id in agent.calls
+            ):
+                raise ValueError("工具调用标识重复")
+            call = agent.calls[ev.tool_id] = uid()
+            await emit(
+                "tool_call",
+                call_id=call,
+                tool=ev.tool_name,
+                args=ev.arguments,
+                native_id=ev.tool_id,
+            )
+        elif isinstance(ev, native.ToolResultEvent):
+            await emit(
+                "tool_result",
+                call_id=agent.calls.pop(ev.tool_id),
+                tool=ev.tool_name,
+                is_error=ev.is_error,
+                output=ev.output[:MAX_OUTPUT_CHARS],
+                truncated=len(ev.output) > MAX_OUTPUT_CHARS,
+            )
+        elif isinstance(ev, native.PermissionRequest):
+            call = current_call.get()
+            ans = await channel.request(
+                "permission", call_id=call, description=ev.description
+            )
+            await channel.request(
+                "delivered", call_id=call, permission_id=ans["permission_id"]
+            )
+            decision = ans["decision"]
+            if decision == "allow_always":
+                await channel.request("save_rule", call_id=call, action_id=uid())
+                decision = "allow"
+            ev.future.set_result(
+                native.PermissionReply(
+                    native.PermissionResponse(decision), ans["feedback"]
+                )
+            )
+        elif isinstance(ev, (native.StreamText, native.ThinkingText)):
+            await emit(
+                "text" if isinstance(ev, native.StreamText) else "thinking",
+                message_id=message,
+                text=ev.text,
+            )
+        elif isinstance(ev, native.CompactNotification):
+            if ev.boundary is not None:
+                await persist(
+                    make_compact_boundary(ev.boundary.summary, ev.boundary.keep)
+                )
+            await emit("compact", text=ev.message)
+        elif isinstance(ev, native.ErrorEvent):
+            failure = ev.message
+            await emit("error", text=ev.message)
+        elif isinstance(ev, native.UsageEvent):
+            await emit("usage", **asdict(ev))
+        for msg in conv.history:
+            if not msg.persisted:
+                for record in SessionRecord.from_message(msg):
+                    await persist(record)
+                msg.persisted = True
+        if isinstance(ev, native.TurnComplete):
+            message = uid()
+    await channel.request(
+        "finish", state="failed" if failure else "completed", reason=failure
+    )
+
+
+def main():
+    source, sink = sys.stdin.buffer, sys.stdout.buffer
+    sys.stdout = sys.stderr
+    first = json.loads(source.readline(MAX_FRAME))
+    channel = Channel(first["instance"], source, sink)
+
+    async def supervise():
+        try:
+            await run(first, channel)
+        except (BrokenPipeError, ConnectionError):
+            raise
+        except Exception as exc:
+            await channel.request(
+                "finish", state="failed", reason=f"{type(exc).__name__}: {exc}"
+            )
+
+    asyncio.run(supervise())
