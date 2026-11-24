@@ -12,7 +12,12 @@ class Form(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DirectoryRequest(Form):
+    directory: str = Field(default="", max_length=4096)
+
+
 class SessionRequest(Form):
+    request_id: UUID | None = None
     directory: str = Field(min_length=1, max_length=4096)
     profile_id: str = Field(default="", max_length=150)
 

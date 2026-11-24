@@ -10,6 +10,13 @@ from playwright.sync_api import expect, sync_playwright
 URL = os.getenv("RSI_UI", "http://127.0.0.1:5173")
 
 
+def choose_folder(page, path):
+    page.get_by_role("button", name="Choose local folder").click()
+    page.get_by_label("Working directory", exact=True).fill(str(path))
+    page.get_by_role("button", name="Open directory").click()
+    page.wait_for_url("**/#coding/*")
+
+
 def dashboard(page):
     page.goto(URL + "/#overview")
     expect(page.get_by_role("heading", name="Harness performance")).to_be_visible()
@@ -226,8 +233,7 @@ def coding_workspace(page):
     page.goto(URL)
 
     def open_repo(path):
-        page.get_by_label("Git working directory").fill(str(path))
-        page.get_by_role("button", name="Open directory").click()
+        choose_folder(page, path)
         page.wait_for_url("**/#coding/*")
         expect(page.get_by_label("Message", exact=True)).to_be_visible()
         return page.url
@@ -329,6 +335,126 @@ def coding_workspace(page):
     assert not (repo / "maths.py").exists()
 
 
+def coding_onboarding(page):
+    import time
+    from webdemo.tests.coding_fixture import service
+
+    calls = []
+
+    def respond(req, delta):
+        calls.append(req)
+        time.sleep(0.4)
+        if any(m["role"] == "tool" for m in req["messages"]):
+            return delta(content="Saved the note.")
+        if "write a note" in str(req["messages"]):
+            return delta(("WriteFile", {"file_path": "note.txt", "content": "on disk"}))
+        return delta(content="Hello from the local folder.")
+
+    with service("coding-onboarding", respond) as (work, repo, url, client):
+        folder = work / "PPT"
+        folder.mkdir()
+        page.goto(url)
+        box = page.get_by_role("textbox", name="Message", exact=True)
+        expect(box).to_be_visible()
+        expect(page.locator(".coding-sessions a")).to_have_count(0)
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        page.screenshot(path=str(work / "home.png"))
+        page.evaluate("""() => {
+            const send = window.fetch.bind(window);
+            window.fetch = async (...args) => {
+                if (String(args[0]).endsWith('/turns') && !window.releaseTurn) {
+                    await new Promise(resolve => { window.releaseTurn = resolve; });
+                }
+                return send(...args);
+            };
+        }""")
+        box.fill("hello")
+        box.press("Enter")
+        dialog = page.get_by_role("dialog")
+        path = dialog.get_by_label("Working directory")
+        path.fill(str(work / "absent"))
+        dialog.get_by_role("button", name="Open directory").click()
+        expect(dialog.get_by_role("alert")).to_contain_text("目录不存在")
+        expect(box).to_have_value("hello")
+        path.fill(str(work))
+        dialog.get_by_role("button", name="Browse", exact=True).click()
+        dialog.get_by_role("button", name="PPT", exact=True).click()
+        expect(path).to_have_value(str(folder))
+        dialog.get_by_role("button", name="Open directory").click()
+        page.wait_for_url("**/#coding/*")
+        expect(page.locator(".coding-pending")).to_contain_text("Sending")
+        expect(page.locator(".coding-user")).to_have_text("hello")
+        page.evaluate("window.releaseTurn()")
+        expect(page.locator(".coding-text")).to_have_text(
+            "Hello from the local folder.", timeout=20000
+        )
+        expect(page.locator(".coding-user")).to_have_count(1)
+        expect(page.get_by_role("button", name="Changes", exact=True)).to_have_count(0)
+        session = "sessions/" + page.url.rsplit("/", 1)[1]
+        assert len(client.get(session + "/view").json()["turns"]) == len(calls) == 1
+
+        # 请求已持久化但回执丢失。冻结事件流直到重试，核对两次提交号相同。
+        expect(page.locator('[data-state="completed"]')).to_have_count(1)
+        page.route("**/events?after=*", lambda route: route.abort())
+        page.reload()
+        expect(box).to_be_enabled()
+        requests = []
+
+        def lose_first_reply(route):
+            requests.append(route.request.post_data_json["submit_request_id"])
+            response = route.fetch()
+            assert response.status == 202
+            if len(requests) == 1:
+                route.abort()
+            else:
+                route.fulfill(response=response)
+
+        page.route("**/turns", lose_first_reply)
+        box.fill("write a note")
+        expect(page.get_by_role("button", name="Send", exact=True)).to_be_enabled()
+        box.press("Enter")
+        expect(page.get_by_role("alert")).to_be_visible()
+        expect(box).to_have_value("write a note")
+        page.get_by_role("button", name="Retry").click()
+        expect(box).to_have_value("")
+        assert len(requests) == 2 and len(set(requests)) == 1
+        page.unroute("**/events?after=*")
+        card = page.locator(".coding-permission")
+        expect(card.get_by_role("button", name="Allow once")).to_be_visible(
+            timeout=15000
+        )
+        assert not (folder / "note.txt").exists()
+        card.get_by_role("button", name="Allow once").click()
+        expect(page.locator('[data-state="completed"]')).to_have_count(2, timeout=20000)
+        assert (folder / "note.txt").read_text() == "on disk"
+        assert not (folder / ".git").exists()
+        page.reload()
+        expect(page.locator(".coding-user")).to_have_count(2)
+        page.get_by_role("button", name="Files", exact=True).click()
+        expect(page.locator(".code")).to_contain_text("on disk")
+        page.get_by_label("Close panel").click()
+        page.screenshot(path=str(work / "folder.png"))
+        page.unroute("**/turns")
+
+        page.get_by_role("button", name="New session").click()
+        choose_folder(page, repo)
+        expect(page.get_by_role("button", name="Changes", exact=True)).to_be_visible()
+        box.fill("hello from git")
+        page.get_by_role("button", name="Send", exact=True).dblclick()
+        expect(page.locator('[data-state="completed"]')).to_have_count(1, timeout=20000)
+        assert len(client.get("sessions").json()) == 2
+        git_view = client.get("sessions/" + page.url.rsplit("/", 1)[1] + "/view").json()
+        assert len(git_view["turns"]) == 1
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.get_by_label("Expand sessions").click()
+        page.get_by_role("button", name="New session").click()
+        expect(box).to_be_visible()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.screenshot(path=str(work / "mobile.png"))
+        page.set_viewport_size({"width": 1440, "height": 980})
+        page.goto("about:blank")
+
+
 def coding_controls(page):
     """本地受控模型与真实 Runtime 验证并行卡片、授权、摘要和未知测试结论。"""
     import json
@@ -409,7 +535,7 @@ def coding_controls(page):
             except OSError:
                 time.sleep(0.1)
         page.goto(url)
-        page.get_by_label("Git working directory").fill(str(repo))
+        choose_folder(page, repo)
         page.get_by_label("Message", exact=True).fill(
             "controlled parallel call scenario"
         )
@@ -517,7 +643,7 @@ def coding_long(page):
             "import os,time,subprocess,sys\nfrom pathlib import Path\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(3000)'])\nPath('pids.txt').write_text(str(os.getpid())+' '+str(child.pid))\nprint('LONG-START',os.getpid(),flush=True)\ntime.sleep(9)\nprint('OFFLINE-OUTPUT',flush=True)\nfor i in range(40): print(str(i)+'x'*60000,flush=True)\nwhile True:\n Path('progress.txt').write_text(str(time.time()))\n time.sleep(3)\n"
         )
         page.goto(url)
-        page.get_by_label("Git working directory").fill(str(repo))
+        choose_folder(page, repo)
         page.get_by_label("Message", exact=True).fill("long-running acceptance")
         page.get_by_role("button", name="Send", exact=True).click()
         page.wait_for_url("**/#coding/*")
@@ -643,8 +769,7 @@ def coding_real(page):
             check=True,
         )
         page.goto(url)
-        page.locator('input[name="directory"]').fill(str(repo))
-        page.locator("form.coding-start button").first.click()
+        choose_folder(page, repo)
         page.wait_for_url("**/#coding/*")
         original = page.url
         path = "sessions/" + original.rsplit("/", 1)[1]
@@ -1155,6 +1280,9 @@ def main():
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         for name in phase.split(","):
+            if page.is_closed():
+                page = context.new_page()
+                page.on("pageerror", lambda e: errors.append(str(e)))
             globals()[name](page)
             assert not errors, errors
             print("PASS browser", name, flush=True)

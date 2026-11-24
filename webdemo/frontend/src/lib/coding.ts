@@ -6,8 +6,10 @@ export type Session = {
   directory: string;
   title: string;
   available?: boolean;
+  workspace_kind: "git" | "folder";
 };
 export type Payload = {
+  submit_request_id?: string;
   text?: string;
   state?: string;
   reason?: string;

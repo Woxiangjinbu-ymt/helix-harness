@@ -327,7 +327,7 @@ export function CodingTimeline({
                           {c.ruleError} · {e.payload.rule_error}
                         </p>
                       ))}
-                    {unknown && <button onClick={onDiff}>{c.diff}</button>}
+                    {unknown && onDiff && <button onClick={onDiff}>{c.diff}</button>}
                     {permissions.map((e) => (
                       <Permission
                         key={e.seq}

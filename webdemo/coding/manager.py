@@ -866,6 +866,18 @@ class Manager:
                     "SELECT * FROM leases WHERE tree=?", (job.tree_id,)
                 ).fetchone()
                 if lease["state"] == "free":
+                    root = Path(job.tree.root)
+                    occupied = db.execute(
+                        """SELECT t.identity, u.session FROM leases l JOIN trees t ON t.id=l.tree
+                           JOIN turns u ON u.id=l.turn WHERE l.state!='free'"""
+                    )
+                    for row in occupied:
+                        other = Path(json.loads(row["identity"])["root"])
+                        if root.is_relative_to(other) or other.is_relative_to(root):
+                            raise Conflict(
+                                "工作目录正由其他会话写入：" + row["session"],
+                                holder_session_id=row["session"],
+                            )
                     db.execute(
                         """UPDATE leases SET state='held',generation=generation+1,worker=?,turn=?,acquired=? WHERE tree=?""",
                         (job.instance, job.tid, now(), job.tree_id),

@@ -178,7 +178,7 @@ def shell_profile(tree, temp, state):
     for path in (
         APP_DATA,
         state,
-        tree.admin,
+        *([tree.admin] if tree.admin else []),
         PROJECT / "evaluation/repo-python-v1/private",
         *[
             Path(os.environ[k]).expanduser().resolve()

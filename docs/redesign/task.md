@@ -181,6 +181,10 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 
 本机 Shell 监督在 macOS ARM64 登录会话完成验收。首次长任务验收脚本使用了随最后一页关闭的临时浏览器上下文；改为显式上下文后，两次完整运行分别达到 1801.24 秒和 1801.46 秒。第三阶段从 T301 开始交付独立 RSI Center。
 
+### 第二阶段交付后的 Coding 入口修复
+
+按用户实际操作补验 F2、F9、AC01 和 AC06。普通目录和 Git 工作树共用会话、授权和轮次提交。空白首页使用同一个消息框，支持先选目录或先写首条消息。运行 `.venv/bin/python webdemo/tests/browser.py --phase coding_onboarding`，从空历史验证路径纠错、草稿保留、普通目录写入、回执丢失重试和 Git 双击提交。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/CodingOnboarding/results.json>)
+
 ## Phase 3 · 独立 RSI Center
 
 ### 题集、评测与单题证据

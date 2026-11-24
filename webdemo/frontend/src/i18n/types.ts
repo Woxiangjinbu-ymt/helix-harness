@@ -37,6 +37,13 @@ export type Messages = {
     exit: string;
     unavailable: string;
     choose: string;
+    startTitle: string;
+    browse: string;
+    parentFolder: string;
+    lastFolder: string;
+    noFolders: string;
+    opening: string;
+    sending: string;
     accepted: string;
     running: string;
     waiting_permission: string;

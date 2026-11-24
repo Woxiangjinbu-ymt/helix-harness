@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronRight,
   Code2,
   Files,
+  FolderOpen,
+  PanelLeft,
   FlaskConical,
   GitPullRequest,
   Globe,
@@ -28,6 +30,7 @@ import type { Session } from "../lib/coding";
 import { CodeViewer } from "../components/CodeViewer";
 import { DiffViewer } from "../components/DiffViewer";
 import { CodingSettings } from "./CodingSettings";
+import { CodingDirectoryPicker } from "../components/CodingDirectoryPicker";
 import { CodingTimeline } from "../components/CodingTimeline";
 
 type Panel = "files" | "diff" | "terminal" | "tools";
@@ -156,30 +159,38 @@ export function CodingWorkspace({
   const { theme, toggleTheme } = useTheme();
   const [rev, setRev] = useState(0);
   const sessions = useData<Session[]>("coding/sessions", rev);
-  const config = useData<{
-    provider: string;
-    model: string;
-    directory: string;
-    error?: string;
-  }>(settings || !id ? "coding/defaults" : null);
   const { session, entries, error, offline, reload } = useSession(id);
-  const [directory, setDirectory] = useState<string | null>(null);
   const draftKey = "coding.draft." + (id || "new");
   const [draft, setDraft] = useState(
     () => sessionStorage.getItem(draftKey) || "",
   );
   const [panel, setPanel] = useState<Panel | null>(null);
+  const [picker, setPicker] = useState<"open" | "send" | null>(null);
+  const [sidebar, setSidebar] = useState(false);
   const [failure, setFailure] = useState("");
   const busy = useRef(false);
   const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState<{
+    request: string;
+    text: string;
+  } | null>(null);
   const lastState = entries.filter((e) => e.kind === "state").at(-1)
     ?.payload.state;
   const active = Boolean(lastState && !terminalStates.includes(lastState));
-  const selectedDir =
-    directory ??
-    localStorage.getItem("coding.lastDirectory") ??
-    config.data?.directory ??
-    "";
+  const userRequests = entries
+    .filter((e) => e.kind === "user")
+    .map((e) => e.payload.submit_request_id);
+  const showPending = pending && !userRequests.includes(pending.request);
+  const empty = !id || (session && !entries.length && !pending);
+  const folderName = session?.directory.split("/").pop() || "/";
+  const recent = sessions.data?.filter(
+    (s) => s.title || sessionStorage.getItem("coding.draft." + s.session_id),
+  );
+  const input = useRef<HTMLTextAreaElement>(null);
+  function changeDraft(text: string) {
+    setDraft(text);
+    sessionStorage.setItem(draftKey, text);
+  }
   async function perform(fn: () => Promise<void>) {
     if (busy.current) return;
     busy.current = true;
@@ -194,59 +205,87 @@ export function CodingWorkspace({
       setSending(false);
     }
   }
-  function create() {
-    void perform(async () => {
-      const result = await api<Session>("coding/sessions", {
-        directory: selectedDir,
-        profile_id: localStorage.getItem("coding.profile") || "",
-      });
-      localStorage.setItem("coding.lastDirectory", result.directory);
-      go("coding", result.session_id);
+  async function openDirectory(directory: string) {
+    const profile = localStorage.getItem("coding.profile") || "";
+    const key = "coding.new.request";
+    const result = await api<Session>("coding/sessions", {
+      directory,
+      profile_id: profile,
+      request_id: requestId(key, JSON.stringify([directory, profile])),
     });
+    const nextKey = "coding.draft." + result.session_id;
+    sessionStorage.setItem(nextKey, draft);
+    if (picker === "send") sessionStorage.setItem(nextKey + ".send", "1");
+    localStorage.setItem("coding.lastDirectory", result.directory);
+    sessionStorage.removeItem(key);
+    sessionStorage.removeItem(draftKey);
+    go("coding", result.session_id);
   }
   function send() {
-    if (!draft.trim() || active) return;
+    if (!draft.trim() || active || busy.current || showPending) return;
+    if (!id) {
+      setPicker("send");
+      return;
+    }
+    if (!session?.available) return;
+    const key = draftKey + ".request";
+    const submission = requestId(key, draft);
+    setPending({ request: submission, text: draft });
     void perform(async () => {
-      let target = id;
-      if (!target) {
-        const session = await api<Session>("coding/sessions", {
-          directory: selectedDir,
-          profile_id: localStorage.getItem("coding.profile") || "",
-        });
-        target = session.session_id;
-        localStorage.setItem("coding.lastDirectory", session.directory);
-        sessionStorage.setItem("coding.draft." + target, draft);
-      }
-      const key = "coding.draft." + target + ".request";
       try {
-        await api(sessionPath(target) + "/turns", {
-          submit_request_id: requestId(key, draft),
+        await api(sessionPath(id) + "/turns", {
+          submit_request_id: submission,
           text: draft,
         });
+        // 回执或事件任一先到，都可以确认接收。等待事件接替临时气泡。
+        if (sessionStorage.getItem(draftKey) === draft) changeDraft("");
+        sessionStorage.removeItem(key);
+        setRev((v) => v + 1);
       } catch (err) {
-        if (!id) go("coding", target);
-        throw err;
+        setPending(null);
+        if (sessionStorage.getItem(key)) throw err;
       }
-      if (!id) {
-        sessionStorage.removeItem("coding.draft." + target);
-        go("coding", target);
-      }
-      sessionStorage.removeItem(key);
-      sessionStorage.removeItem(draftKey);
-      setDraft("");
-      setRev((v) => v + 1);
     });
   }
+  useEffect(() => {
+    if (!session?.available || settings) return;
+    input.current?.focus();
+    if (sessionStorage.getItem(draftKey + ".send")) {
+      sessionStorage.removeItem(draftKey + ".send");
+      send();
+    }
+  }, [session?.session_id, settings]);
+  useEffect(() => {
+    const key = draftKey + ".request";
+    const saved = sessionStorage.getItem(key);
+    if (saved) {
+      const { id: request, content } = JSON.parse(saved);
+      if (userRequests.includes(request)) {
+        if (sessionStorage.getItem(draftKey) === content) changeDraft("");
+        sessionStorage.removeItem(key);
+        setFailure("");
+        setRev((v) => v + 1);
+      }
+    }
+    if (pending && userRequests.includes(pending.request)) setPending(null);
+  }, [entries, pending]);
   const history = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   useLayoutEffect(() => {
     if (history.current && follow.current)
       history.current.scrollTop = history.current.scrollHeight;
-  }, [entries.length]);
+  }, [entries.length, showPending]);
   const revision =
     rev + entries.filter((e) => e.kind === "action_ended").length;
   return (
-    <div className="app coding-shell">
+    <div className={"app coding-shell" + (sidebar ? " sidebar-open" : "")}>
+      {sidebar && (
+        <button
+          className="coding-scrim"
+          aria-label={t.controls.collapseSidebar}
+          onClick={() => setSidebar(false)}
+        />
+      )}
       <aside className="app-sidebar">
         <div className="brand">
           <img src="/helix.svg" width="28" height="28" alt="" />
@@ -254,13 +293,21 @@ export function CodingWorkspace({
             MewCode<small>Coding Workspace</small>
           </div>
         </div>
-        <button className="sidebar-new-btn" onClick={() => go("coding")}>
+        <button
+          className="sidebar-new-btn"
+          onClick={() => {
+            setSidebar(false);
+            go("coding");
+          }}
+        >
           <Plus size={16} />
           {c.newSession}
         </button>
-        <div className="sidebar-projects-head">{c.recent}</div>
+        {Boolean(recent?.length) && (
+          <div className="sidebar-projects-head">{c.recent}</div>
+        )}
         <nav className="app-nav coding-sessions">
-          {sessions.data?.map((s) => (
+          {recent?.map((s) => (
             <a
               href={"#coding/" + s.session_id}
               key={s.session_id}
@@ -268,8 +315,11 @@ export function CodingWorkspace({
             >
               <Code2 size={15} />
               <span>
-                {s.title || s.directory.split("/").pop()}
-                <small>{s.directory}</small>
+                {s.title ||
+                  sessionStorage.getItem("coding.draft." + s.session_id)}
+                <small title={s.directory}>
+                  {s.directory.split("/").pop() || "/"}
+                </small>
               </span>
             </a>
           ))}
@@ -288,13 +338,29 @@ export function CodingWorkspace({
       </aside>
       <main className="coding-main">
         <header className="coding-head">
+          <button
+            className="coding-menu"
+            aria-label={t.controls.expandSidebar}
+            onClick={() => setSidebar(true)}
+          >
+            <PanelLeft size={17} />
+          </button>
           <span>Coding Workspace</span>
-          <ChevronRight size={14} />
-          <b>
-            {settings
-              ? c.settings
-              : session?.directory.split("/").pop() || c.newSession}
-          </b>
+          {settings && (
+            <>
+              <ChevronRight size={14} />
+              <b>{c.settings}</b>
+            </>
+          )}
+          {!settings && session && (
+            <details className="coding-location">
+              <summary>
+                <FolderOpen size={15} />
+                {c.directory} · {folderName}
+              </summary>
+              <span>{session.directory}</span>
+            </details>
+          )}
           <div className="coding-actions">
             <button
               aria-label={t.controls.switchLanguage}
@@ -319,68 +385,32 @@ export function CodingWorkspace({
           <div className="coding-center">
             {settings ? (
               <CodingSettings sid={id || ""} />
-            ) : !id ? (
-              <form
-                className="coding-start"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  create();
-                }}
-              >
-                <h1>{c.newSession}</h1>
-                <p>{c.choose}</p>
-                <label>
-                  {c.directory}
-                  <input
-                    name="directory"
-                    required
-                    value={selectedDir}
-                    onChange={(e) => setDirectory(e.target.value)}
-                  />
-                </label>
-                <button disabled={sending}>{c.open}</button>
-                <div className="coding-composer">
-                  <textarea
-                    aria-label={c.draft}
-                    placeholder={c.prompt}
-                    value={draft}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      sessionStorage.setItem(draftKey, e.target.value);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={sending || !draft.trim() || !selectedDir}
-                    onClick={send}
-                    className="coding-primary"
-                  >
-                    <ArrowUp size={15} />
-                    {c.send}
-                  </button>
-                </div>
-              </form>
             ) : (
               <>
-                <div className="coding-session-head">
-                  <strong>{session?.directory}</strong>
-                  <div className="coding-actions">
-                    {(Object.keys(panels) as Panel[]).map((k) => {
-                      const Icon = panels[k];
-                      return (
-                        <button
-                          key={k}
-                          aria-pressed={panel === k}
-                          onClick={() => setPanel((p) => (p === k ? null : k))}
-                        >
-                          <Icon size={14} />
-                          {c[k]}
-                        </button>
-                      );
-                    })}
+                {id && session && (
+                  <div className="coding-tools">
+                    {(Object.keys(panels) as Panel[])
+                      .filter(
+                        (k) => k !== "diff" || session.workspace_kind === "git",
+                      )
+                      .map((k) => {
+                        const Icon = panels[k];
+                        return (
+                          <button
+                            key={k}
+                            aria-pressed={panel === k}
+                            onClick={() =>
+                              setPanel((p) => (p === k ? null : k))
+                            }
+                          >
+                            <Icon size={14} />
+                            {c[k]}
+                          </button>
+                        );
+                      })}
                   </div>
-                </div>
-                {active && (
+                )}
+                {id && active && (
                   <button
                     disabled={sending || lastState === "cancelling"}
                     onClick={() => {
@@ -403,67 +433,125 @@ export function CodingWorkspace({
                     {locale === "zh" ? "取消轮次" : "Cancel turn"}
                   </button>
                 )}
+                {id && !session && !error && (
+                  <p role="status">{t.controls.loading}</p>
+                )}
                 {offline && <p role="status">{c.disconnect}</p>}
                 {session?.available === false && (
                   <p role="alert">{c.unavailable}</p>
                 )}
-                <div
-                  className="coding-history"
-                  ref={history}
-                  onScroll={(e) => {
-                    const node = e.currentTarget;
-                    follow.current =
-                      node.scrollHeight - node.scrollTop - node.clientHeight <
-                      48;
-                  }}
-                >
-                  <CodingTimeline
-                    sid={id}
-                    entries={entries}
-                    onDiff={() => setPanel("diff")}
-                  />
-                </div>
-                <form
-                  className="coding-composer"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    send();
-                  }}
-                >
-                  <textarea
-                    aria-label={c.draft}
-                    placeholder={c.prompt}
-                    value={draft}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      sessionStorage.setItem(draftKey, e.target.value);
+                {!empty && id && (
+                  <div
+                    className="coding-history"
+                    ref={history}
+                    onScroll={(e) => {
+                      const n = e.currentTarget;
+                      follow.current =
+                        n.scrollHeight - n.scrollTop - n.clientHeight < 48;
                     }}
-                    onKeyDown={(e) => {
-                      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                        e.preventDefault();
-                        send();
-                      }
-                    }}
-                  />
-                  <button
-                    className="coding-primary"
-                    disabled={
-                      !session?.available || sending || active || !draft.trim()
-                    }
                   >
-                    <ArrowUp size={15} />
-                    {c.send}
-                  </button>
-                </form>
+                    <CodingTimeline
+                      sid={id}
+                      entries={entries}
+                      onDiff={
+                        session?.workspace_kind === "git"
+                          ? () => setPanel("diff")
+                          : undefined
+                      }
+                    />
+                    {showPending && pending && (
+                      <div className="coding-pending" role="status">
+                        <div className="coding-user">{pending.text}</div>
+                        <small>{sending ? c.sending : c.accepted}</small>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div
+                  className={"coding-compose-area" + (empty ? " is-empty" : "")}
+                >
+                  {empty && <h1>{c.startTitle}</h1>}
+                  {(failure || error) && (
+                    <div className="coding-inline-error" role="alert">
+                      {(failure || error) === "storage_error"
+                        ? c.storageFault
+                        : failure || error}
+                      {error ? (
+                        <button onClick={reload}>{c.again}</button>
+                      ) : (
+                        draft.trim() && (
+                          <button disabled={sending || active} onClick={send}>
+                            {c.again}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )}
+                  <form
+                    className="coding-composer"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      send();
+                    }}
+                  >
+                    <textarea
+                      ref={input}
+                      aria-label={c.draft}
+                      autoFocus
+                      rows={2}
+                      placeholder={c.prompt}
+                      value={draft}
+                      disabled={Boolean(id) && !session}
+                      readOnly={sending}
+                      onChange={(e) => changeDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === "Enter" &&
+                          !e.shiftKey &&
+                          !e.altKey &&
+                          !e.nativeEvent.isComposing &&
+                          e.nativeEvent.keyCode !== 229
+                        ) {
+                          e.preventDefault();
+                          send();
+                        }
+                      }}
+                    />
+                    <div className="coding-compose-tools">
+                      {!id && (
+                        <button
+                          type="button"
+                          className="coding-folder-button"
+                          onClick={() => setPicker("open")}
+                        >
+                          <FolderOpen size={16} />
+                          {c.choose}
+                        </button>
+                      )}
+                      <button
+                        className="coding-primary coding-send"
+                        aria-label={c.send}
+                        title={c.send}
+                        disabled={
+                          (Boolean(id) && !session?.available) ||
+                          sending ||
+                          active ||
+                          Boolean(showPending) ||
+                          !draft.trim()
+                        }
+                      >
+                        <ArrowUp size={19} />
+                      </button>
+                    </div>
+                  </form>
+                </div>
+                {picker && (
+                  <CodingDirectoryPicker
+                    onClose={() => setPicker(null)}
+                    onOpen={openDirectory}
+                  />
+                )}
               </>
-            )}
-            {(failure || error) && (
-              <div role="alert">
-                {(failure || error) === "storage_error"
-                  ? c.storageFault
-                  : failure || error}{" "}
-                {error && <button onClick={reload}>{c.again}</button>}
-              </div>
             )}
           </div>
           {!settings && id && panel && (

@@ -71,6 +71,64 @@ def test_worktree_and_view(local, tmp_path):
         tree.verify()
 
 
+def test_plain_directory_identity_files_and_retry(local, tmp_path):
+    _, store = local
+    folder = tmp_path / "PPT"
+    folder.mkdir()
+    (folder / "slides.md").write_text("local note")
+    (folder / ".env").write_text("private")
+    (folder / "external").symlink_to(store.root)
+    alias = tmp_path / "slides"
+    alias.symlink_to(folder)
+    request = uuid4()
+    a = store.create_session(folder, "", request)
+    assert store.create_session(folder, "", request)["session_id"] == a["session_id"]
+    assert store.create_session(alias, "")["worktree_id"] == a["worktree_id"]
+    if (tmp_path / "ppt").is_dir():
+        assert (
+            store.create_session(tmp_path / "ppt", "")["worktree_id"]
+            == a["worktree_id"]
+        )
+    tree = Worktree(**a["identity"])
+    assert a["workspace_kind"] == "folder"
+    assert tree.verify() == folder
+    assert tree.files("local note", True) == ["slides.md"]
+    assert set(tree.file_stamps()) == {"slides.md"}
+    assert not (folder / ".git").exists()
+    (folder / ".git").write_text("gitdir: missing")
+    with pytest.raises(ValueError, match="Git"):
+        Worktree.identify(folder)
+
+
+def test_directory_picker_and_open_errors(configured, tmp_path):
+    import os
+
+    client, repo, _, _ = configured
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    item = folder / "notes.txt"
+    item.touch()
+    listing = client.post("/api/coding/directories", json={"directory": str(tmp_path)})
+    assert listing.status_code == 200 and folder.name in listing.json()["folders"]
+    for directory, reason in ((item, "是文件"), (folder / "missing", "不存在")):
+        result = client.post("/api/coding/sessions", json={"directory": str(directory)})
+        assert result.status_code == 422 and reason in result.json()["detail"]
+    if os.geteuid() != 0:
+        folder.chmod(0)
+        try:
+            result = client.post(
+                "/api/coding/sessions", json={"directory": str(folder)}
+            )
+            assert result.status_code == 422 and "权限" in result.json()["detail"]
+        finally:
+            folder.chmod(0o700)
+    nested = repo / "nested"
+    nested.mkdir()
+    (nested / ".git").mkdir()
+    result = client.post("/api/coding/sessions", json={"directory": str(nested)})
+    assert result.status_code == 422 and "Git" in result.json()["detail"]
+
+
 def test_turn_receipts_and_events(local):
     repo, store = local
     sid = store.create_session(repo, "")["session_id"]
@@ -811,7 +869,8 @@ def test_lost_ready_ack_runs_model_once(configured, monkeypatch):
     )
 
 
-def test_alias_competition_through_http(configured, monkeypatch, tmp_path):
+@pytest.mark.parametrize("overlap", ["git-alias", "parent", "child"])
+def test_alias_competition_through_http(configured, monkeypatch, tmp_path, overlap):
     import json
     import sys
     import time
@@ -825,8 +884,15 @@ def test_alias_competition_through_http(configured, monkeypatch, tmp_path):
     doc = json.loads(config.read_text())
     doc["permission_mode"] = "bypassPermissions"
     config.write_text(json.dumps(doc))
-    alias = tmp_path / "alias"
-    alias.symlink_to(repo)
+    if overlap == "git-alias":
+        alias = tmp_path / "alias"
+        alias.symlink_to(repo)
+    else:
+        parent = tmp_path / "plain"
+        child = parent / "child"
+        child.mkdir(parents=True)
+        repo, alias = (parent, child) if overlap == "parent" else (child, parent)
+        (alias / "test.txt").write_text("read while busy")
     other = tmp_path / "other"
     git(tmp_path, "init", str(other))
     (repo / "hold.py").write_text(
@@ -895,7 +961,7 @@ def test_alias_competition_through_http(configured, monkeypatch, tmp_path):
         ]
         assert conflicts == [a.rsplit("/", 1)[1]] * 2
         assert (
-            not (repo / "blocked").exists()
+            not (alias / "blocked").exists()
             and (other / "independent").read_text() == "yes"
         )
     finally:
@@ -903,7 +969,7 @@ def test_alias_competition_through_http(configured, monkeypatch, tmp_path):
     wait_view(client, a, lambda v: v["turns"][0]["ended"])
     submit(b, "retry-B")
     wait_view(client, b, lambda v: len(v["turns"]) == 2 and v["turns"][-1]["ended"])
-    assert (repo / "allowed").read_text() == "once"
+    assert (alias / "allowed").read_text() == "once"
 
 
 def test_git_evidence_and_mixed_edits(configured, monkeypatch):

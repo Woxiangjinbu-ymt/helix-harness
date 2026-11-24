@@ -1,6 +1,6 @@
 # MewCode · Coding Workspace 与 RSI Center
 
-默认页面打开普通 Coding 会话。在目录框输入本机 Git 工作目录后，可以直接提问、授权编辑和运行测试。会话详情提供文件、差异、工具调用及终端输出。左侧的 RSI Center 打开实验、评分与 Harness 版本页面，已有的 `#workspace/<job_id>` 链接仍可打开历史作业。
+默认页面打开普通 Coding 会话。点击「选择本地目录」浏览文件夹或粘贴完整路径，也可以先写消息再选目录。普通目录可以直接提问、授权编辑、运行测试并查看终端输出。打开 Git 工作树后还可查看差异。左侧的 RSI Center 打开实验、评分与 Harness 版本页面，已有的 `#workspace/<job_id>` 链接仍可打开历史作业。
 
 ## 安装与启动
 

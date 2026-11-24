@@ -98,12 +98,22 @@ class Store:
         finally:
             db.close()
 
-    def create_session(self, directory, profile):
+    def create_session(self, directory, profile, request=None):
+        payload = {"directory": str(directory), "profile": profile}
+        if request:
+            with self.connection() as db:
+                prior = self.existing(db, "session/create", request, payload)
+                if prior:
+                    return self.session(prior["id"], db)
         tree, cwd = Worktree.identify(directory)
         if self.root.is_relative_to(tree.root):
-            raise ValueError("Coding 数据目录必须位于工作树之外")
+            raise ValueError("此目录包含 Coding 会话数据，请选择具体的项目子目录")
         identity = encode(asdict(tree))
         with self.connection(True) as db:
+            if request:
+                prior = self.existing(db, "session/create", request, payload)
+                if prior:
+                    return self.session(prior["id"], db)
             db.execute("INSERT OR IGNORE INTO trees VALUES(?,?)", (uid(), identity))
             tree_id = db.execute(
                 "SELECT id FROM trees WHERE identity=?", (identity,)
@@ -114,6 +124,8 @@ class Store:
                 "INSERT INTO sessions VALUES(?,?,?,?,?,?,?)",
                 (sid, tree_id, cwd, profile, "", stamp, stamp),
             )
+            if request:
+                self.remember(db, "session/create", request, payload, {"id": sid})
             return self.session(sid, db)
 
     def session(self, sid, db):
@@ -127,6 +139,7 @@ class Store:
             raise KeyError(sid)
         r = dict(row)
         r["identity"] = json.loads(r["identity"])
+        r["workspace_kind"] = "git" if r["identity"]["admin"] else "folder"
         r["directory"] = str(Path(r["identity"]["root"]) / r["cwd_relative"])
         return r
 
@@ -252,7 +265,14 @@ class Store:
                 "INSERT INTO turns(id,session,snapshot,state,accepted) VALUES(?,?,?,'accepted',?)",
                 (tid, sid, snapshot, stamp),
             )
-            self.event(db, sid, tid, "user", "user", {"text": text})
+            self.event(
+                db,
+                sid,
+                tid,
+                "user",
+                "user",
+                {"text": text, "submit_request_id": str(request)},
+            )
             self.event(
                 db,
                 sid,

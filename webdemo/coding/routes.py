@@ -4,7 +4,6 @@ import asyncio
 import json
 import sqlite3
 from functools import lru_cache
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -13,6 +12,7 @@ from . import profiles
 from .manager import Manager
 from .models import (
     CancelRequest,
+    DirectoryRequest,
     Conflict,
     PermissionAnswer,
     ProfileRequest,
@@ -21,7 +21,7 @@ from .models import (
     TurnRequest,
 )
 from .store import Store
-from .worktrees import Worktree
+from .worktrees import Worktree, browse_directories
 
 
 async def activate():
@@ -125,24 +125,33 @@ def defaults():
         _, provider = providers.select()
     except ValueError as exc:
         return {
-            "directory": str(Path.cwd()),
+            "directory": "",
             "provider": "",
             "model": "",
             "error": str(exc),
         }
     return {
-        "directory": str(Path.cwd()),
+        "directory": "",
         "provider": provider.name,
         "model": provider.model,
     }
 
 
+@router.post("/directories")
+def directories(form: DirectoryRequest):
+    return browse_directories(form.directory)
+
+
 @router.post("/sessions", status_code=201)
 def create(form: SessionRequest):
     try:
-        session = store().create_session(form.directory, form.profile_id)
+        session = store().create_session(
+            form.directory, form.profile_id, form.request_id
+        )
+    except Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     except OSError as exc:
-        raise HTTPException(422, "请选择可用的 Git 工作目录") from exc
+        raise HTTPException(422, "无法打开目录，请检查路径和访问权限") from exc
     session.pop("identity")
     return session
 
