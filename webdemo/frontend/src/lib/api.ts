@@ -17,6 +17,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   );
   if (!r.ok) {
     const v = await r.json().catch(() => ({}));
+    if (path.startsWith("coding/") && v.code === "storage_error") throw Error("storage_error");
     throw Error(
       typeof v.detail === "string"
         ? v.detail

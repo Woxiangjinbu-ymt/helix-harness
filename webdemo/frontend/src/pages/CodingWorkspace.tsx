@@ -27,6 +27,7 @@ import {
 import type { Session } from "../lib/coding";
 import { CodeViewer } from "../components/CodeViewer";
 import { DiffViewer } from "../components/DiffViewer";
+import { CodingSettings } from "./CodingSettings";
 import { CodingTimeline } from "../components/CodingTimeline";
 
 type Panel = "files" | "diff" | "terminal" | "tools";
@@ -197,6 +198,7 @@ export function CodingWorkspace({
     void perform(async () => {
       const result = await api<Session>("coding/sessions", {
         directory: selectedDir,
+        profile_id: localStorage.getItem("coding.profile") || "",
       });
       localStorage.setItem("coding.lastDirectory", result.directory);
       go("coding", result.session_id);
@@ -209,6 +211,7 @@ export function CodingWorkspace({
       if (!target) {
         const session = await api<Session>("coding/sessions", {
           directory: selectedDir,
+          profile_id: localStorage.getItem("coding.profile") || "",
         });
         target = session.session_id;
         localStorage.setItem("coding.lastDirectory", session.directory);
@@ -315,16 +318,7 @@ export function CodingWorkspace({
         <div className="coding-body">
           <div className="coding-center">
             {settings ? (
-              <section className="coding-start">
-                <h1>{c.readonly}</h1>
-                <p>
-                  {config.data?.provider} · {config.data?.model}
-                </p>
-                {(config.error || config.data?.error) && (
-                  <p role="alert">{config.error || config.data?.error}</p>
-                )}
-                <a href={"#coding" + (id ? "/" + id : "")}>Coding Workspace</a>
-              </section>
+              <CodingSettings sid={id || ""} />
             ) : !id ? (
               <form
                 className="coding-start"
@@ -386,6 +380,29 @@ export function CodingWorkspace({
                     })}
                   </div>
                 </div>
+                {active && (
+                  <button
+                    disabled={sending || lastState === "cancelling"}
+                    onClick={() => {
+                      const turn = entries
+                        .filter((e) => e.kind === "state")
+                        .at(-1)!.turn_id;
+                      void perform(async () => {
+                        await api(
+                          sessionPath(id) + "/turns/" + turn + "/cancel",
+                          {
+                            request_id: requestId(
+                              "coding.cancel." + turn,
+                              turn,
+                            ),
+                          },
+                        );
+                      });
+                    }}
+                  >
+                    {locale === "zh" ? "取消轮次" : "Cancel turn"}
+                  </button>
+                )}
                 {offline && <p role="status">{c.disconnect}</p>}
                 {session?.available === false && (
                   <p role="alert">{c.unavailable}</p>
@@ -400,7 +417,11 @@ export function CodingWorkspace({
                       48;
                   }}
                 >
-                  <CodingTimeline sid={id} entries={entries} />
+                  <CodingTimeline
+                    sid={id}
+                    entries={entries}
+                    onDiff={() => setPanel("diff")}
+                  />
                 </div>
                 <form
                   className="coding-composer"
@@ -438,7 +459,9 @@ export function CodingWorkspace({
             )}
             {(failure || error) && (
               <div role="alert">
-                {failure || error}{" "}
+                {(failure || error) === "storage_error"
+                  ? c.storageFault
+                  : failure || error}{" "}
                 {error && <button onClick={reload}>{c.again}</button>}
               </div>
             )}

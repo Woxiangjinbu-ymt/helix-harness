@@ -2,6 +2,8 @@ import type { Messages } from "./types";
 
 export const zh: Messages = {
   coding: {
+    modelError: "模型请求失败", commandError: "命令失败", checkSettings: "检查模型设置", reviewCommand: "查看命令与输出", resumeAfterDenial: "可在下一轮调整请求。",
+    unknownAction: "执行结果未知", storageFault: "进度存储不可用，已停止派发工具",
     decision: "授权决定", requestedRule: "已申请持续授权", ruleError: "持续授权规则保存失败",
     newSession: "新会话",
     directory: "Git 工作目录",

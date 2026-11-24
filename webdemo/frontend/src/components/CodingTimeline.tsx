@@ -72,7 +72,8 @@ function Permission({
           {decision.payload.decision === "allow_always"
             ? c.requestedRule
             : stateText(decision.payload.decision || "", c)}{" "}
-          {decision.payload.feedback}
+          {decision.payload.feedback}{" "}
+          {decision.payload.decision === "deny" && c.resumeAfterDenial}
         </p>
       ) : (
         !closed && (
@@ -126,14 +127,44 @@ function testEvidence(
   return c.unknown;
 }
 
+function Output({ text }: { text: string }) {
+  const { locale } = useI18n();
+  const [page, setPage] = useState(0);
+  const size = 16384;
+  const pages = Math.ceil(text.length / size);
+  const current = Math.min(page, Math.max(0, pages - 1));
+  return (
+    <>
+      <pre>{text.slice(current * size, (current + 1) * size)}</pre>
+      {pages > 1 && (
+        <nav>
+          <button disabled={!current} onClick={() => setPage(current - 1)}>
+            {locale === "zh" ? "上一段" : "Previous"}
+          </button>
+          <span>
+            {current + 1} / {pages}
+          </span>
+          <button
+            disabled={current + 1 >= pages}
+            onClick={() => setPage(current + 1)}
+          >
+            {locale === "zh" ? "下一段" : "Next"}
+          </button>
+        </nav>
+      )}
+    </>
+  );
+}
 export function CodingTimeline({
   sid,
   entries,
   filter,
+  onDiff,
 }: {
   sid: string;
   entries: Entry[];
   filter?: "terminal" | "tools";
+  onDiff?: () => void;
 }) {
   const c = useI18n().t.coding;
   const turns = groupEntries(entries, (e) => e.turn_id);
@@ -141,7 +172,9 @@ export function CodingTimeline({
     <div className="coding-timeline">
       {Array.from(turns, ([tid, rows]) => {
         const state = rows.filter((e) => e.kind === "state").at(-1)?.payload;
-        const closed = terminalStates.includes(state?.state || "");
+        const closed =
+          terminalStates.includes(state?.state || "") ||
+          state?.state === "cancelling";
         const model = rows.find((e) => e.payload.model)?.payload;
         const calls = groupEntries(
           rows.filter((e) => e.payload.call_id),
@@ -195,6 +228,9 @@ export function CodingTimeline({
                 (filter !== "terminal" || p.tool === "Bash")
               ) {
                 const related = calls.get(p.call_id) || [];
+                const unknown = related.some(
+                  (e) => e.kind === "unknown_result",
+                );
                 const result = related.find(
                   (e) => e.kind === "tool_result",
                 )?.payload;
@@ -233,10 +269,22 @@ export function CodingTimeline({
                           ? result.is_error
                             ? c.failed
                             : c.completed
-                          : c.pending}
+                          : unknown
+                            ? c.unknownAction
+                            : state?.state === "cancelled"
+                              ? c.cancelled
+                              : c.pending}
                       </summary>
                       <small>{c.arguments}</small>
                       <pre>{JSON.stringify(p.args, null, 2)}</pre>
+                      {end &&
+                        end.exit_code != null &&
+                        end.exit_code !== 0 &&
+                        result?.is_error && (
+                          <small>
+                            {c.commandError} · {c.reviewCommand}
+                          </small>
+                        )}
                       {command && (
                         <small>
                           {command.cwd} $ {command.command}
@@ -252,8 +300,11 @@ export function CodingTimeline({
                             </a>
                           </p>
                         ))}
-                      <pre>{output || result?.output}</pre>
-                      {result?.truncated && <small>{c.truncated}</small>}
+                      <Output text={output || result?.output || ""} />
+                      {(result?.truncated ||
+                        related.some(
+                          (e) => e.kind === "output" && e.payload.truncated,
+                        )) && <small>{c.truncated}</small>}
                       {end && (
                         <small>
                           {c.exit} {end.exit_code ?? "?"} ·{" "}
@@ -276,6 +327,7 @@ export function CodingTimeline({
                           {c.ruleError} · {e.payload.rule_error}
                         </p>
                       ))}
+                    {unknown && <button onClick={onDiff}>{c.diff}</button>}
                     {permissions.map((e) => (
                       <Permission
                         key={e.seq}
@@ -297,6 +349,15 @@ export function CodingTimeline({
                 (entry.kind === "error" || entry.kind === "compact")
               )
                 return <p key={entry.seq}>{p.text}</p>;
+              if (!filter && entry.kind === "extension")
+                return (
+                  <p key={entry.seq}>
+                    {p.extension} · {p.name} · {p.status} {p.tools?.join(", ")}{" "}
+                    {p.error}
+                  </p>
+                );
+              if (!filter && entry.kind === "cleaning")
+                return <small key={entry.seq}>{p.reason}</small>;
               if (!filter && entry.kind === "summary")
                 return (
                   <details key={entry.seq}>
@@ -352,7 +413,19 @@ export function CodingTimeline({
                 );
               return null;
             })}
-            {!filter && state?.reason && <p role="status">{state.reason}</p>}
+            {!filter && state?.reason && (
+              <p role="status">
+                {state.error_type === "storage"
+                  ? c.storageFault
+                  : state.error_type === "model"
+                    ? c.modelError + " · " + model?.model + " · "
+                    : ""}
+                {state.reason}{" "}
+                {state.error_type === "model" && (
+                  <a href={"#coding-settings/" + sid}>{c.checkSettings}</a>
+                )}
+              </p>
+            )}
           </section>
         );
       })}

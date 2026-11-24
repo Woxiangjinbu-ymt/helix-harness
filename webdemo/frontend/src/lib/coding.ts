@@ -34,6 +34,13 @@ export type Payload = {
   provider?: string;
   model?: string;
   hook_id?: string;
+  error_type?: string;
+  extension?: string;
+  source?: string;
+  name?: string;
+  status?: string;
+  error?: string;
+  tools?: string[];
   holder_session_id?: string;
   rule_error?: string;
   changes?: { path: string; call_id: string; uncertain: boolean }[];
@@ -65,6 +72,8 @@ export function useSession(id?: string) {
     if (!id) return;
     let live = true;
     let source: EventSource | undefined;
+    let timer: ReturnType<typeof setTimeout>;
+    let cursor = 0;
     const path = sessionPath(id);
     setError("");
     api<View>(path + "/view")
@@ -72,27 +81,68 @@ export function useSession(id?: string) {
         if (!live) return;
         setSession(view.session);
         setEntries(view.events);
-        const cursor = encodeURIComponent(id + "/" + view.through_seq);
-        source = new EventSource("/api/" + path + "/events?after=" + cursor);
-        source.onopen = () => live && setOffline(false);
-        source.onerror = () => live && setOffline(true);
-        source.onmessage = (msg) => {
+        cursor = view.through_seq;
+        let applied = view.events;
+        function connect() {
           if (!live) return;
-          const entry: Entry = JSON.parse(msg.data);
-          setEntries((prev) =>
-            !prev.length || prev[prev.length - 1].seq < entry.seq
-              ? [...prev, entry]
-              : prev,
+          const feed = new EventSource(
+            "/api/" +
+              path +
+              "/events?after=" +
+              encodeURIComponent(id + "/" + cursor),
           );
-        };
-        source.addEventListener(
-          "reset_required",
-          () => live && setRetry((r) => r + 1),
-        );
+          source = feed;
+          function retryFeed() {
+            if (!live || source !== feed) return;
+            feed.close();
+            source = undefined;
+            setOffline(true);
+            timer = setTimeout(connect, 500);
+          }
+          feed.onopen = () => {
+            if (live) {
+              setOffline(false);
+              setError("");
+            }
+          };
+          feed.onerror = retryFeed;
+          feed.onmessage = (msg) => {
+            if (!live || feed !== source) return;
+            try {
+              const entry = JSON.parse(msg.data);
+              if (
+                entry.session_id !== id ||
+                !Number.isSafeInteger(entry.seq) ||
+                msg.lastEventId !== id + "/" + entry.seq ||
+                !entry.kind ||
+                !entry.payload
+              )
+                throw Error("Invalid session event");
+              if (entry.seq <= cursor) return;
+              applied = [...applied, entry];
+              setEntries(applied);
+              cursor = entry.seq;
+            } catch {
+              retryFeed();
+            }
+          };
+          feed.addEventListener("storage_error", () => {
+            setError("storage_error");
+            retryFeed();
+          });
+          feed.addEventListener("reset_required", () => {
+            if (live) {
+              feed.close();
+              setRetry((r) => r + 1);
+            }
+          });
+        }
+        connect();
       })
       .catch((e) => live && setError(e.message));
     return () => {
       live = false;
+      clearTimeout(timer);
       source?.close();
     };
   }, [id, retry]);

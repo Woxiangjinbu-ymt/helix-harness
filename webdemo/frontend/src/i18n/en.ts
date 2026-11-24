@@ -2,6 +2,8 @@ import type { Messages } from "./types";
 
 export const en: Messages = {
   coding: {
+    modelError: "Model request failed", commandError: "Command failed", checkSettings: "Review model settings", reviewCommand: "Inspect command and output", resumeAfterDenial: "You can revise the request in the next turn.",
+    unknownAction: "Action outcome unknown", storageFault: "Progress storage unavailable. Tool dispatch stopped.",
     decision: "Permission decision", requestedRule: "Requested persistent permission", ruleError: "Could not save persistent rule",
     newSession: "New session",
     directory: "Git working directory",

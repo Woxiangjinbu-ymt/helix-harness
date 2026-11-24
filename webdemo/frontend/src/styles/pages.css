@@ -1340,3 +1340,12 @@
 .coding-permission { border-left:3px solid var(--border-strong); }
 .coding-permission input { margin:7px 0; }
 @media(max-width:800px) { .coding-shell .app-sidebar { width:155px; } .coding-panel { width:min(85vw,500px); position:absolute; right:0; top:var(--topbar-h); bottom:0; z-index:4; } .coding-session-head strong {overflow-wrap:anywhere;} }
+
+.coding-settings { overflow-y:auto; max-height:100%; }
+.coding-settings form { display:grid; gap:12px; margin:12px 0 20px; }
+.coding-settings label { display:block; }
+.coding-settings select { display:block; max-width:100%; margin-top:6px; }
+.coding-settings fieldset { border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
+.coding-settings fieldset label { display:flex; align-items:center; gap:8px; }
+.coding-settings input[type=checkbox] { width:auto; margin:0; }
+.coding-settings button { justify-self:start; }

@@ -2,6 +2,7 @@ export type Locale = "en" | "zh";
 
 export type Messages = {
   coding: {
+    modelError:string;commandError:string;checkSettings:string;reviewCommand:string;resumeAfterDenial:string;unknownAction: string; storageFault: string;
     decision: string; requestedRule: string; ruleError: string;
     newSession: string;
     directory: string;
