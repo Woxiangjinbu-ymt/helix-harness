@@ -237,6 +237,8 @@
 
 ### AC26 · 原生 CLI/TUI 与既有归档兼容
 
+**2026-11-24 · T101 已取证，AC26 待升级后复测。** 旧版原生恢复入口从隔离副本恢复 `session_20261101_163801_9sgn` 的 7 条消息。旧 Web 入口按原标识读取 29 个运行、6 条版本记录和旧作业 `a53cface0df74ce9b31194f931b8b8ad`。四组归档共 210 个文件。保存后再次以 `webdemo/tests/recovery.py --verify-baseline` 独立比对通过。[本机基线清单](</Users/tianmu/Library/Application Support/MewCode/Redesign/T101/baseline.json>)
+
 对应需求 N13、F22。取证任务 T101、T510、T513。
 
 - **验证方式**　T101 在升级前保存原生可续聊会话的已知事实，并为归档副本按原标识建立只读对照。升级后从原生 CLI 发起实际工具请求，在 tmux 启动 TUI、执行编程并按原有方式恢复该会话。通过 RSI Center 和旧作业链接打开同一批归档。
