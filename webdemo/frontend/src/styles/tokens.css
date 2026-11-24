@@ -1,0 +1,185 @@
+/* Semantic Design Tokens · Helix RSI Observatory */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Typography */
+  --font-sans:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Microsoft YaHei",
+    "Segoe UI",
+    sans-serif;
+  --font-mono:
+    "JetBrains Mono",
+    "SF Mono",
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+
+  /* Radii & Motion */
+  --radius-xs: 5px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --topbar-h: 48px;
+  --sidebar-w: 256px;
+
+  /* Surfaces (Dark · Serene Agent Studio) */
+  --bg-canvas: #0e1116;
+  --bg-sidebar: #0a0d11;
+  --bg-surface: #131820;
+  --bg-surface-2: #19202a;
+  --bg-surface-hover: #1f2835;
+  --bg-code: #0b0f14;
+  --bg-elevated: #181f29;
+  --bg-scrim: rgba(4, 7, 11, 0.65);
+
+  /* Borders */
+  --border: #202733;
+  --border-subtle: #181e28;
+  --border-strong: #2e3847;
+
+  /* Ink */
+  --text-primary: #eef2f6;
+  --text-secondary: #a8b4c2;
+  --text-muted: #7e8c9c;
+  --text-faint: #5c6978;
+
+  /* Brand & Semantic Accents */
+  --accent: #34d399;
+  --accent-hover: #4be3ac;
+  --accent-fg: #042116;
+  --accent-ink: #6ee7b7;
+  --accent-soft: rgba(52, 211, 153, 0.12);
+  --accent-border: rgba(52, 211, 153, 0.3);
+
+  --violet: #a78bfa;
+  --violet-ink: #c4b5fd;
+  --violet-soft: rgba(167, 139, 250, 0.13);
+  --violet-border: rgba(167, 139, 250, 0.3);
+
+  --amber: #f59e0b;
+  --amber-ink: #fcd34d;
+  --amber-soft: rgba(245, 158, 11, 0.13);
+  --amber-border: rgba(245, 158, 11, 0.3);
+
+  --danger: #f87171;
+  --danger-ink: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.13);
+  --danger-border: rgba(248, 113, 113, 0.3);
+
+  --info: #38bdf8;
+  --info-ink: #7dd3fc;
+  --info-soft: rgba(56, 189, 248, 0.12);
+  --info-border: rgba(56, 189, 248, 0.28);
+
+  /* Diff */
+  --diff-add-bg: rgba(34, 197, 94, 0.13);
+  --diff-add-gutter: rgba(34, 197, 94, 0.2);
+  --diff-add-ink: #86efac;
+  --diff-del-bg: rgba(248, 113, 113, 0.13);
+  --diff-del-gutter: rgba(248, 113, 113, 0.2);
+  --diff-del-ink: #fca5a5;
+  --diff-hunk-bg: rgba(167, 139, 250, 0.1);
+  --diff-hunk-ink: #c4b5fd;
+
+  /* Syntax Highlight */
+  --syn-kw: #c084fc;
+  --syn-str: #6ee7b7;
+  --syn-num: #fbbf24;
+  --syn-com: #64748b;
+  --syn-fn: #7dd3fc;
+  --syn-key: #93c5fd;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --shadow-focus: 0 0 0 3px rgba(52, 211, 153, 0.24);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces (Light · Clean Studio Paper) */
+  --bg-canvas: #ffffff;
+  --bg-sidebar: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-surface-2: #f3f5f8;
+  --bg-surface-hover: #e9edf3;
+  --bg-code: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-scrim: rgba(15, 23, 42, 0.28);
+
+  /* Borders */
+  --border: #e6ebf1;
+  --border-subtle: #eff2f6;
+  --border-strong: #cfd8e3;
+
+  /* Ink */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+
+  /* Brand & Semantic Accents */
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-fg: #ffffff;
+  --accent-ink: #047857;
+  --accent-soft: rgba(5, 150, 105, 0.09);
+  --accent-border: rgba(5, 150, 105, 0.28);
+
+  --violet: #7c3aed;
+  --violet-ink: #6d28d9;
+  --violet-soft: rgba(124, 58, 237, 0.09);
+  --violet-border: rgba(124, 58, 237, 0.24);
+
+  --amber: #d97706;
+  --amber-ink: #b45309;
+  --amber-soft: rgba(217, 119, 6, 0.1);
+  --amber-border: rgba(217, 119, 6, 0.28);
+
+  --danger: #dc2626;
+  --danger-ink: #b91c1c;
+  --danger-soft: rgba(220, 38, 38, 0.09);
+  --danger-border: rgba(220, 38, 38, 0.25);
+
+  --info: #0284c7;
+  --info-ink: #0369a1;
+  --info-soft: rgba(2, 132, 199, 0.09);
+  --info-border: rgba(2, 132, 199, 0.24);
+
+  /* Diff */
+  --diff-add-bg: rgba(16, 185, 129, 0.12);
+  --diff-add-gutter: rgba(16, 185, 129, 0.18);
+  --diff-add-ink: #065f46;
+  --diff-del-bg: rgba(239, 68, 68, 0.1);
+  --diff-del-gutter: rgba(239, 68, 68, 0.18);
+  --diff-del-ink: #991b1b;
+  --diff-hunk-bg: rgba(124, 58, 237, 0.08);
+  --diff-hunk-ink: #5b21b6;
+
+  /* Syntax Highlight */
+  --syn-kw: #7c3aed;
+  --syn-str: #047857;
+  --syn-num: #b45309;
+  --syn-com: #94a3b8;
+  --syn-fn: #0369a1;
+  --syn-key: #1d4ed8;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 12px 28px rgba(15, 23, 42, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(5, 150, 105, 0.2);
+}
