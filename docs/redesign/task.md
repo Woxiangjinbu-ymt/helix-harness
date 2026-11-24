@@ -99,14 +99,27 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 | --- | --- | --- | --- | --- |
 | T129 · 提交整轮终态 | T117、T127 | `coding/runtime_adapter.py`、`coding/manager.py`、`coding/store.py`。实现 finish_turn，核对最后来源序号、整个 Agent.run 返回值及清理证据，条件提交一次终态事件。 | 让原生 TurnComplete 后继续调用第二个工具，Web 仍运行。整轮退出后刷新两页只看到同一终态。（AC04、AC22） | DONE |
 | T130 · 接通提交与实时订阅 | T113、T117、T120、T124、T125、T127、T128、T129 | `api.py`、`coding/routes.py`。装配 Coding 路由。挂接 POST /turns、授权答复、GET /view 和 GET /events，提供首屏读快照及提交后增量，沿用本机访问和归属校验。 | 真实服务接收本地请求返回 202，结束前已有已提交片段。错误来源、错配父子对象、存储失败分别返回 403、404、503。（AC02、AC05、AC25） | DONE |
-| T131 · 设定默认工作台路由 | T112、T130 | `src/main.tsx`、`src/lib/workspaceContext.tsx`、`src/pages/CodingWorkspace.tsx`。将默认、新会话与 `#coding/<session_id>` 路由到普通工作台。把公开题选择限定在 RSI，保留 `#workspace/<job_id>`。 | 分别直达空地址、Coding 会话和旧作业链接，网络请求和渲染记录属于各自业务，普通首页无需实验健康探测。（AC01、AC19、AC26） | IN_PROGRESS |
-| T132 · 接入会话选择与输入 | T130、T131 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`。侧栏选择目录、新建与重开会话。发送时复用单次操作 ID，中心输入框按会话保存草稿。 | 在两个仓库之间切换再返回，原目录、会话与未发送草稿正确。双击提交只出现一个轮次。（AC01、AC02、AC22） | IN_PROGRESS |
-| T133 · 按调用渲染时间线 | T117、T118、T130、T132 | `src/pages/CodingWorkspace.tsx`、`src/components/CodingTimeline.tsx`、`src/lib/coding.ts`。按消息和调用身份归并事件，显示真实文本、可用思考、参数、工具结果和授权卡片，提供三种现有授权决定。 | 用两次并行同名调用与一项需询问操作打开详情，原参数、权限范围和结果逐项相符。（AC04、AC05） | IN_PROGRESS |
-| T134 · 显示终端与测试证据 | T126、T133 | `coding/actions.py`、`src/components/CodingTimeline.tsx`。把每次 Shell 的实际命令、cwd、输出、退出状态连到调用卡片。无可靠结论时显示结果未知。 | 依次运行失败测试、修复后重跑和无可靠测试结论的命令，三个视图与原始输出、退出证据一致。（AC02、AC04） | IN_PROGRESS |
-| T135 · 连接文件与差异面板 | T106、T107、T132 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/styles/pages.css`。复用 CodeViewer、DiffViewer 连接浏览、搜索和逐文件 Git 差异。按需展开工具、终端和文件面板。 | 打开暂存与未暂存文件、切换详情再收起，内容和 Git 相符，输入草稿仍在。（AC01、AC03） | IN_PROGRESS |
-| T136 · 生成本轮摘要 | T124、T133、T134、T135 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`。从调用记录汇总测试、未完成项和能归属的变更。对外部混合编辑标明来源未确定。 | 对同文件混合编辑，核对仓库总览含全部修改，本轮摘要的每个确定项都能打开相应调用。（AC03、AC04） | IN_PROGRESS |
-| T137 · 对齐工作台两种语言 | T133、T134、T135、T136 | `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/pages/CodingWorkspace.tsx`。补齐会话、权限、冲突、未知与失败状态的中英文键，并接入原语言切换。 | 切换两种语言并构建。同一调用状态和权限范围在两个界面均可识别。（AC01、AC04、AC05） | IN_PROGRESS |
-| T138 · 验收第一阶段 | 本阶段全部前项 | `webdemo/tests/browser.py`、`webdemo/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | IN_PROGRESS |
+| T131 · 设定默认工作台路由 | T112、T130 | `src/main.tsx`、`src/lib/workspaceContext.tsx`、`src/pages/CodingWorkspace.tsx`。将默认、新会话与 `#coding/<session_id>` 路由到普通工作台。把公开题选择限定在 RSI，保留 `#workspace/<job_id>`。 | 分别直达空地址、Coding 会话和旧作业链接，网络请求和渲染记录属于各自业务，普通首页无需实验健康探测。（AC01、AC19、AC26） | DONE |
+| T132 · 接入会话选择与输入 | T130、T131 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`。侧栏选择目录、新建与重开会话。发送时复用单次操作 ID，中心输入框按会话保存草稿。 | 在两个仓库之间切换再返回，原目录、会话与未发送草稿正确。双击提交只出现一个轮次。（AC01、AC02、AC22） | DONE |
+| T133 · 按调用渲染时间线 | T117、T118、T130、T132 | `src/pages/CodingWorkspace.tsx`、`src/components/CodingTimeline.tsx`、`src/lib/coding.ts`。按消息和调用身份归并事件，显示真实文本、可用思考、参数、工具结果和授权卡片，提供三种现有授权决定。 | 用两次并行同名调用与一项需询问操作打开详情，原参数、权限范围和结果逐项相符。（AC04、AC05） | DONE |
+| T134 · 显示终端与测试证据 | T126、T133 | `coding/actions.py`、`src/components/CodingTimeline.tsx`。把每次 Shell 的实际命令、cwd、输出、退出状态连到调用卡片。无可靠结论时显示结果未知。 | 依次运行失败测试、修复后重跑和无可靠测试结论的命令，三个视图与原始输出、退出证据一致。（AC02、AC04） | DONE |
+| T135 · 连接文件与差异面板 | T106、T107、T132 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/styles/pages.css`。复用 CodeViewer、DiffViewer 连接浏览、搜索和逐文件 Git 差异。按需展开工具、终端和文件面板。 | 打开暂存与未暂存文件、切换详情再收起，内容和 Git 相符，输入草稿仍在。（AC01、AC03） | DONE |
+| T136 · 生成本轮摘要 | T124、T133、T134、T135 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`。从调用记录汇总测试、未完成项和能归属的变更。对外部混合编辑标明来源未确定。 | 对同文件混合编辑，核对仓库总览含全部修改，本轮摘要的每个确定项都能打开相应调用。（AC03、AC04） | DONE |
+| T137 · 对齐工作台两种语言 | T133、T134、T135、T136 | `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/pages/CodingWorkspace.tsx`。补齐会话、权限、冲突、未知与失败状态的中英文键，并接入原语言切换。 | 切换两种语言并构建。同一调用状态和权限范围在两个界面均可识别。（AC01、AC04、AC05） | DONE |
+| T138 · 验收第一阶段 | 本阶段全部前项 | `webdemo/tests/browser.py`、`webdemo/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | DONE |
+
+### 第一阶段交付记录 · 2026-11-24
+
+T101–T138 已完成。默认入口可以在本机 Git 工作目录创建普通会话、授权编辑、执行测试、检查文件与差异。原生会话和 RSI 旧归档已经在入口改动前保存，阶段结束时重新恢复和比对通过。[升级前基线](</Users/tianmu/Library/Application Support/MewCode/Redesign/T101/baseline.json>) · [阶段证据清单](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/manifest.json>)
+
+| 交付 | 实际改动与验证 |
+| --- | --- |
+| 会话与路由 | `webdemo/api.py`、`rsi_api.py`、`providers.py` 与 `coding/{models,store,profiles,routes,worktrees}.py` 分开管理普通会话和实验资源。默认页面只请求 Coding 接口，旧作业 `a53cface0df74ce9b31194f931b8b8ad` 的详情和轨迹仍可通过旧链接打开。|
+| Runtime 与工具 | `coding/{manager,worker,runtime_adapter,actions}.py` 让每个活动轮次在独立进程运行原生 Agent。只读调用可并行，写操作、同步命令 Hook 和规则保存经过服务端授权及工作树写入权检查。本机 Shell 用 macOS 沙箱限制文件访问，用独立审计会话的结束通知核对子进程清理。延迟第一个读取的用例中，第二个读取先结束，两个结果仍匹配原调用。|
+| 浏览器 | `frontend/index.html`、`src/main.tsx`、`pages/CodingWorkspace.tsx`、`components/CodingTimeline.tsx`、`lib/{api,coding}.ts`、`styles/pages.css` 与 `i18n/{types,en,zh}.ts` 接入实际会话、草稿、三种权限答复、文件、Diff、终端及轮次摘要。启动说明见 [Web 工作台](../../webdemo/README.md)。 |
+| 真实模型验收 | `deepseek-official / deepseek-flash` 在普通浏览器会话 `741ef584-71e7-4ed6-9161-c3a46f067cdc` 运行轮次 `ceed2ce1-c521-41fb-a716-afe7029c23ad`。同一条 `python3 -m unittest` 先退出 1，编辑 `maths.py` 后退出 0，独立重跑通过。[真实模型轮次](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/view.json>) · [Git 补丁](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/changes.diff>) · [独立测试输出](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/unittest.txt>) |
+| 自动验证 | 新增 `webdemo/tests/test_coding_lifecycle.py`，扩展 `browser.py`、`recovery.py`。Coding 专项 13 项通过。三个浏览器场景 `coding_workspace`、`coding_controls`、`coding_legacy` 通过。前端构建通过。原生与 RSI 套件 742 项通过、17 项跳过；各跳过原因在测试日志中。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/browser.txt>) · [专项测试](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/lifecycle.txt>) · [原生套件](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/native.txt>) |
+| 平台与交接 | Shell 写进程监督在 macOS ARM64 登录会话实测。当前其他平台在命令启动前报告沙箱不可用。第二阶段从 T201 接入取消，随后验收服务重启恢复、Web 配置及扩展、真实多轮续聊和至少 30 分钟的同一任务。 |
 
 ## Phase 2 · Coding 稳定性与日常使用
 

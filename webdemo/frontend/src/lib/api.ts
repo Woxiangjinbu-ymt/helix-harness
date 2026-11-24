@@ -20,7 +20,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
     throw Error(
       typeof v.detail === "string"
         ? v.detail
-        : "Request failed (" + r.status + ")",
+        : v.detail?.message || "Request failed (" + r.status + ")",
     );
   }
   return r.json();

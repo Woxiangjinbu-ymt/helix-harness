@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChevronRight,
@@ -21,6 +21,7 @@ import { num, relativeTime, short } from "./lib/format";
 import { WorkspaceProvider, useWorkspace } from "./lib/workspaceContext";
 import { Dashboard } from "./pages/Dashboard";
 import { Workspace } from "./pages/Workspace";
+import { CodingWorkspace } from "./pages/CodingWorkspace";
 import { Evolution } from "./pages/Evolution";
 import { Evaluations } from "./pages/Evaluations";
 import { Versions } from "./pages/Versions";
@@ -149,6 +150,7 @@ function AppShell() {
         </button>
 
         <nav className="app-nav">
+          <a href="#coding"><Terminal size={15} />Coding Workspace</a>
           {links.map(({ id: linkId, name, icon: Icon }) => (
             <a
               key={linkId}
@@ -384,12 +386,20 @@ function AppShell() {
   );
 }
 
+function App() {
+  const [route, id] = useRoute();
+  const coding = !route || route === "coding" || route === "coding-settings";
+  useEffect(() => { document.title = coding ? "MewCode · Coding Workspace" : "Helix · RSI Center"; }, [coding]);
+  if (coding) {
+    return <CodingWorkspace key={route + "/" + (id || "")} id={id} settings={route === "coding-settings"} />;
+  }
+  return <WorkspaceProvider><AppShell /></WorkspaceProvider>;
+}
+
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider>
     <I18nProvider>
-      <WorkspaceProvider>
-        <AppShell />
-      </WorkspaceProvider>
+      <App />
     </I18nProvider>
   </ThemeProvider>,
 );

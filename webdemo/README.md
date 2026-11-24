@@ -1,16 +1,15 @@
-# Helix · RSI Observatory
+# MewCode · Coding Workspace 与 RSI Center
 
-Helix 是现有 Evaluation-Driven Repository-Level Self-Evolving Coding Agent 的本地 Web 工作台。可以从浏览器提交仓库任务，观察 MewCode 调用工具，检查代码和评分，再沿着 Default RSI 的实验记录查看一次晋升或者拒绝。左侧导航提供 Overview、Coding workspace、Evolution center、Evaluations、Harness versions 五个入口。
+默认页面打开普通 Coding 会话。在目录框输入本机 Git 工作目录后，可以直接提问、授权编辑和运行测试。会话详情提供文件、差异、工具调用及终端输出。左侧的 RSI Center 打开实验、评分与 Harness 版本页面，已有的 `#workspace/<job_id>` 链接仍可打开历史作业。
 
 ## 安装与启动
 
-在 **MewCode 源码根目录**执行以下命令。已验证的环境为 macOS ARM64、Python 3.13、Node 18.20、npm 10、Docker Desktop 29。需要 Git、uv 和运行中的 Docker。引擎的冻结策略指定 `linux/arm64`，其他平台需能够执行该镜像。Web 依赖独立声明，先同步原引擎，再安装 Web 依赖。
+在 MewCode 源码根目录安装 Python 和 Web 依赖。本机启动需要 Git、uv、Node 与 npm。普通 Coding 的 Shell 已在 macOS ARM64 登录会话验收，使用系统沙箱及 launchd 监督写进程。
 
 ```sh
 uv sync --frozen
 uv pip install --python .venv/bin/python -r webdemo/requirements-dev.txt
 npm --prefix webdemo/frontend ci
-docker pull --platform linux/arm64 python@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
 ```
 
 在两个终端分别启动。仅运行服务时可将上面的 Python 依赖文件换成 `webdemo/requirements.txt`。
@@ -23,7 +22,15 @@ webdemo/start-backend.sh
 webdemo/start-frontend.sh
 ```
 
-打开 [本地工作台](http://127.0.0.1:5173)。后端运行于 8765，启动时还会开启仅监听回环地址的 Mock 模型服务。接口类型和路径可在 [API 文档](http://127.0.0.1:8765/docs) 查看。两个启动脚本均以前台进程运行，用 Ctrl-C 停止。需要单独构建前端时执行以下命令。
+后端监听 8765。前端默认打开 Coding Workspace，选择 RSI 演示模型时才启动本机 Mock 服务。两个启动脚本均以前台进程运行，用 Ctrl-C 停止。[本地工作台](http://127.0.0.1:5173) · [接口文档](http://127.0.0.1:8765/docs)
+
+运行独立 RSI 评分时启动 Docker，并取得冻结的评分镜像。
+
+```sh
+docker pull --platform linux/arm64 python@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+```
+
+单独构建前端可执行以下命令。
 
 ```sh
 npm --prefix webdemo/frontend run build
@@ -36,6 +43,8 @@ npm --prefix webdemo/frontend run build
 | `RSI_WEB_HOME` | `~/Library/Application Support/MewCode/WebConsole`。保存 Web 任务日志、注册仓库和新实验，须位于受保护的引擎源码目录之外 |
 | `RSI_ARCHIVE` | `~/Library/Application Support/MewCode/RSI`。读取已有的 Day 2–5 归档；缺少归档时可直接创建新实验 |
 | `RSI_PUBLIC_REPOS` | Web 数据目录下的 `public-repos/`，供操作者发布可导入的公开 Git 项目 |
+| `CODING_WEB_HOME` | 普通会话 SQLite 库、快照与工具输出。默认位于仓库外的 `~/Library/Application Support/MewCode/CodingWorkspace` |
+| `CODING_PROVIDER_CONFIG` | 可指定本机 MewCode 配置文件。缺省时使用原生配置加载顺序及首个 Provider |
 | `RSI_PROVIDER_CONFIG` | 默认读取引擎的 `.mewcode/config.yaml` |
 | `RSI_PORT`、`RSI_UI_PORT` | 后端 8765、前端 5173 |
 | `RSI_API` | Vite 的 API 代理地址，默认 `http://127.0.0.1:8765`。改后端端口时同时设置 |
