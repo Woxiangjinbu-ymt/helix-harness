@@ -45,6 +45,11 @@ def uid():
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS credentials(id TEXT PRIMARY KEY, secret TEXT, revoked TEXT);
+CREATE TABLE IF NOT EXISTS mcp_connections(session TEXT NOT NULL REFERENCES sessions(id),name TEXT NOT NULL,document TEXT NOT NULL,PRIMARY KEY(session,name));
+CREATE TABLE IF NOT EXISTS profile_keys(profile TEXT, credential TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS coding_profiles(id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS session_options(session TEXT PRIMARY KEY REFERENCES sessions(id), document TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS trees(id TEXT PRIMARY KEY, identity TEXT NOT NULL UNIQUE);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, tree TEXT NOT NULL REFERENCES trees(id),
  cwd TEXT NOT NULL, profile TEXT NOT NULL, title TEXT NOT NULL, created TEXT NOT NULL, active TEXT NOT NULL);
@@ -74,6 +79,7 @@ class Store:
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.path = self.root / "coding.sqlite"
         with closing(sqlite3.connect(self.path, isolation_level=None)) as db:
+            self.path.chmod(0o600)
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript(SCHEMA)
 
@@ -185,6 +191,44 @@ class Store:
             for r in db.execute(sql, params)
         ]
 
+    def cancel(self, sid, tid, request):
+        scope = f"{sid}/{tid}/cancel"
+        with self.connection(True) as db:
+            row = db.execute(
+                "SELECT state,ended FROM turns WHERE session=? AND id=?", (sid, tid)
+            ).fetchone()
+            if row is None:
+                raise KeyError(tid)
+            if prior := self.existing(db, scope, request, {}):
+                return prior
+            state = row["state"]
+            if row["ended"] is None and state != "cancelling":
+                state = "cancelling"
+                db.execute("UPDATE turns SET state=? WHERE id=?", (state, tid))
+                db.execute(
+                    "UPDATE permissions SET state='expired' WHERE turn=? AND state IN ('waiting','answered')",
+                    (tid,),
+                )
+                db.execute(
+                    "UPDATE leases SET state='draining' WHERE turn=? AND state='held'",
+                    (tid,),
+                )
+                self.event(
+                    db,
+                    sid,
+                    tid,
+                    "cancel",
+                    "state",
+                    {"state": state, "reason": "正在停止执行并核实写进程退出"},
+                )
+            return self.remember(
+                db,
+                scope,
+                request,
+                {},
+                {"session_id": sid, "turn_id": tid, "state": state},
+            )
+
     def submit(self, sid, request, text, resolve_snapshot):
         with self.connection(True) as db:
             session = self.session(sid, db)
@@ -218,6 +262,7 @@ class Store:
                 {
                     "state": "accepted",
                     "model": document.get("model"),
+                    "source": document.get("source", "native"),
                     "provider": document.get("provider"),
                 },
             )

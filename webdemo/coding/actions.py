@@ -57,7 +57,7 @@ def parent_fd(tree, target, create=False):
         os.close(fd)
 
 
-async def file_action(tree, cwd, tool, args, seen, scratch):
+async def file_action(tree, cwd, tool, args, seen, scratch, guard=None):
     path = tree.resolve(args["file_path"], cwd)
     name = path.relative_to(tree.root).as_posix()
     try:
@@ -95,6 +95,8 @@ async def file_action(tree, cwd, tool, args, seen, scratch):
                 "path": name,
                 "read_digest": signature,
             }
+        if guard:
+            guard()
         after = private.read_bytes()
         with parent_fd(tree, path, create=True) as (directory, leaf):
             info = None
@@ -228,25 +230,49 @@ def shell_child(directory):
                 return
     finally:
         bsm.au_sdev_close(ctypes.c_void_p(handle))
-    with (directory / "output").open("wb") as output:
-        result = subprocess.run(
-            [
-                "/usr/bin/sandbox-exec",
-                "-p",
-                spec["profile"],
-                "/bin/bash",
-                "--noprofile",
-                "--norc",
+    with (directory / "output").open("wb", buffering=0) as output:
+        command = [
+            "/usr/bin/sandbox-exec",
+            "-p",
+            spec["profile"],
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            spec["command"],
+        ]
+        data = None
+        if "bridge" in spec:
+            command = [
+                sys.executable,
+                "-I",
+                "-B",
                 "-c",
-                spec["command"],
-            ],
-            check=False,
+                "import sys;sys.path.insert(0,sys.argv[1]);from webdemo.coding.mcp_bridge import main;main()",
+                str(PROJECT),
+            ]
+            data = json.dumps(
+                dict(spec["bridge"], cwd=spec["cwd"], profile=spec["profile"])
+            ).encode()
+        result = subprocess.Popen(
+            command,
             env=spec["env"],
             cwd=spec["cwd"],
-            stdin=subprocess.DEVNULL,
-            stdout=output,
-            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL if data is not None else subprocess.STDOUT,
         )
+        if data is not None:
+            result.stdin.write(data)
+            result.stdin.close()
+        retained = 0
+        with result.stdout as pipe:
+            while chunk := os.read(pipe.fileno(), 65536):
+                if retained <= READ_LIMIT:
+                    part = chunk[: READ_LIMIT + 1 - retained]
+                    output.write(part)
+                    retained += len(part)
+        result.wait()
     tmp = directory / "exit.tmp"
     tmp.write_text(str(result.returncode))
     tmp.replace(directory / "exit")
@@ -272,6 +298,26 @@ def ended(fd, pending):
     return False
 
 
+def witness(fd, owner, directory):
+    """独立于 Web 服务持有内核通知。写命令只能在监督者启动后收到 G。"""
+    label = directory.name
+    watched = [fd, owner]
+    pending = bytearray()
+    while not ended(fd, pending):
+        ready, _, _ = select.select(watched, [], [], 1)
+        if owner in ready and not os.read(owner, 1):
+            watched.remove(owner)
+            subprocess.run(
+                ["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{label}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+    tmp = directory / "clean.tmp"
+    tmp.write_text(label)
+    tmp.replace(directory / "clean")
+
+
 async def launchctl(*args, check=True):
     proc = await asyncio.create_subprocess_exec(
         "/bin/launchctl",
@@ -284,7 +330,27 @@ async def launchctl(*args, check=True):
         raise RuntimeError("无法启动受管命令：" + err.decode(errors="replace")[:300])
 
 
-async def run_shell(tree, cwd, command, timeout, state, notify):
+def clear_command_files(directory):
+    """保留内核清理回执，直至对应退出事件提交。"""
+    for entry in directory.iterdir():
+        if entry.name == "clean":
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            # 工作进程可能在自己的临时目录中移除用户写权限。
+            for root, dirs, _files in os.walk(entry, topdown=True, followlinks=False):
+                Path(root).chmod(0o700)
+                for subdir in dirs:
+                    child = Path(root) / subdir
+                    if not child.is_symlink():
+                        child.chmod(0o700)
+            shutil.rmtree(entry)
+        else:
+            entry.unlink(missing_ok=True)
+
+
+async def run_shell(
+    tree, cwd, command, timeout, state, notify, *, stop=None, bridge=None
+):
     if sys.platform != "darwin" or not Path("/usr/bin/sandbox-exec").is_file():
         raise ValueError("当前系统缺少已验证的 Coding Shell 沙箱")
     domain = "gui/" + str(os.getuid())
@@ -318,6 +384,12 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
         # scratch 在私有状态目录下。只向命令重新授予这一小块临时空间。
         escaped = json.dumps(str(scratch), ensure_ascii=False)
         spec["profile"] += f"\n(allow file-read* file-write* (subpath {escaped}))"
+        if bridge:
+            spec["bridge"] = bridge
+            if bridge["operation"] == "discover":
+                spec["profile"] += (
+                    "\n(deny file-write* (subpath " + json.dumps(str(tree.root)) + "))"
+                )
         (directory / "request.json").write_text(json.dumps(spec))
         entry = "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from webdemo.coding.actions import shell_child;shell_child(Path(sys.argv[2]))"
         job = {
@@ -339,6 +411,8 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
         plist.write_bytes(plistlib.dumps(job))
         monitor = None
         loaded = False
+        observer = None
+        owner_write = None
         try:
             await launchctl("bootstrap", domain, str(plist))
             loaded = True
@@ -354,6 +428,27 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                 ):
                     raise RuntimeError("缺少子进程监督凭据")
                 monitor = array.array("i", ancillary[0][2][:4])[0]
+                owner_read, owner_write = os.pipe()
+                try:
+                    observer = await asyncio.create_subprocess_exec(
+                        sys.executable,
+                        "-I",
+                        "-B",
+                        "-c",
+                        "import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);from webdemo.coding.actions import witness;witness(int(sys.argv[2]),int(sys.argv[3]),Path(sys.argv[4]))",
+                        str(PROJECT),
+                        str(monitor),
+                        str(owner_read),
+                        str(directory),
+                        pass_fds=(monitor, owner_read),
+                        start_new_session=True,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        env={"PATH": os.defpath},
+                    )
+                finally:
+                    os.close(owner_read)
                 await notify(
                     "process_started",
                     {
@@ -365,7 +460,7 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                 )
                 conn.sendall(b"G")
             deadline = time.monotonic() + timeout
-            pending, pos, truncated = bytearray(), 0, False
+            pos, truncated = 0, False
             output_path = directory / "output"
 
             async def drain():
@@ -376,7 +471,10 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                         data = stream.read(min(65536, READ_LIMIT - pos))
                     if data:
                         pos += len(data)
-                        await notify("output", {"text": data.decode(errors="replace")})
+                        if not bridge:
+                            await notify(
+                                "output", {"text": data.decode(errors="replace")}
+                            )
                 if (
                     output_path.exists()
                     and output_path.stat().st_size > READ_LIMIT
@@ -386,13 +484,20 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                     await notify("output", {"truncated": True})
 
             timed_out = False
-            while not ended(monitor, pending):
+            while not (directory / "clean").exists():
+                if (
+                    observer.returncode is not None
+                    and not (directory / "clean").exists()
+                ):
+                    raise RuntimeError("内核清理监督通道失联")
                 await drain()
-                if time.monotonic() > deadline and not timed_out:
+                if (
+                    time.monotonic() > deadline or (stop and stop.is_set())
+                ) and not timed_out:
                     await launchctl("bootout", domain + "/" + label, check=False)
                     loaded = False
                     timed_out = True
-                    await notify("cleaning", {"reason": "命令超时，等待所有写进程退出"})
+                    await notify("cleaning", {"reason": "等待本轮所有写进程退出"})
                 await asyncio.sleep(0.08)
             while output_path.exists() and pos < min(
                 READ_LIMIT, output_path.stat().st_size
@@ -408,10 +513,12 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                     return stream.read(READ_LIMIT).decode(errors="replace")
 
             message = await asyncio.to_thread(read_output)
+            await asyncio.to_thread(clear_command_files, directory)
             await notify(
                 "process_exited",
                 {"job": label, "exit_code": code, "timed_out": timed_out},
             )
+            shutil.rmtree(directory, ignore_errors=True)
             return {
                 "output": message or ("(no output)" if code == 0 else "命令未正常结束"),
                 "is_error": code is None
@@ -425,4 +532,12 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                 await launchctl("bootout", domain + "/" + label, check=False)
             if monitor is not None:
                 os.close(monitor)
-            shutil.rmtree(directory, ignore_errors=True)
+            if owner_write is not None:
+                os.close(owner_write)
+            if (directory / "clean").is_file():
+                if observer:
+                    await observer.wait()
+            elif observer is None:
+                shutil.rmtree(directory, ignore_errors=True)
+            if (directory / "clean").is_file():
+                clear_command_files(directory)

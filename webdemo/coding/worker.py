@@ -128,10 +128,30 @@ async def start_process():
             "PATH": os.defpath,
             "LANG": "en_US.UTF-8",
             "PYTHONIOENCODING": "utf-8",
+            "CODING_OWNER_PID": str(os.getpid()),
             "NO_PROXY": "localhost,127.0.0.1,::1",
         },
         start_new_session=True,
     )
+
+
+async def stop_turn(proc):
+    """先通知原生循环取消，超时后终止同一个子进程。"""
+    import signal
+
+    try:
+        proc.send_signal(signal.SIGUSR1)
+        try:
+            await asyncio.wait_for(proc.wait(), 1)
+        except TimeoutError:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), 1)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+    except ProcessLookupError:
+        pass
 
 
 async def send(stream, message):

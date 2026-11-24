@@ -28,7 +28,7 @@ from mewcode.permissions import (
     PermissionMode,
     RuleEngine,
 )
-from mewcode.permissions.rules import extract_content
+from mewcode.permissions.rules import Rule, extract_content
 from mewcode.tools import ToolRegistry
 from mewcode.tools.base import Tool, ToolResult
 from webdemo import providers
@@ -39,12 +39,15 @@ from .worker import MAX_FRAME, Channel
 current_call = ContextVar("coding_call")
 
 
-def checker(directory, mode, local_rules, sandbox):
+def checker(directory, mode, local_rules, sandbox, policy=None):
     class Rules(RuleEngine):
         def snapshot(self):
             return (
-                super().snapshot() + RuleEngine(local_rules_path=local_rules).snapshot()
-            )
+                super().snapshot()
+                if policy is None
+                else [Rule(**r) for r in policy]
+                + [r for r in super().snapshot() if r.effect in ("deny", "ask")]
+            ) + RuleEngine(local_rules_path=local_rules).snapshot()
 
     root = Path(directory)
     rules = Rules(
@@ -109,6 +112,10 @@ class RoutedTool(Tool):
         self.name, self.category = tool.name, tool.category
         self.description, self.params_model = tool.description, tool.params_model
         self.channel = channel
+        self.schema = tool.get_schema()
+
+    def get_schema(self):
+        return self.schema
 
     async def execute(self, params):
         response = await self.channel.request(
@@ -119,6 +126,22 @@ class RoutedTool(Tool):
             args=params.model_dump(),
         )
         return ToolResult(response["output"], is_error=response["is_error"])
+
+
+class SessionConversation(ConversationManager):
+    """扩展与环境由当前快照注入，下一轮可以重新选择。"""
+
+    def inject_long_term_memory(self, instructions, memories, skills=""):
+        previous = self.ltm_injected
+        super().inject_long_term_memory(instructions, memories, skills)
+        if not previous and self.ltm_injected:
+            self.history[1 if self.env_injected else 0].persisted = True
+
+    def inject_environment(self, context):
+        previous = self.env_injected
+        super().inject_environment(context)
+        if not previous and self.env_injected:
+            self.history[0].persisted = True
 
 
 class WebAgent(native.Agent):
@@ -180,13 +203,35 @@ async def run(data, channel):
         context_window=snap["context_window"],
         max_output_tokens=snap["max_output_tokens"],
     )
+
+    class Model:
+        def __init__(self):
+            self.inner = (
+                None if snap.get("source") == "demo" else providers.client(supplied)
+            )
+
+        async def stream(self, *args, **kwargs):
+            await channel.request("model_permission")
+            if self.inner is None:
+                from mewcode.tools.base import StreamEnd, TextDelta
+
+                yield TextDelta(text="MewCode Demo · local demonstration")
+                yield StreamEnd(stop_reason="end_turn")
+                return
+            async for event in self.inner.stream(*args, **kwargs):
+                yield event
+
     registry = ToolRegistry()
     for cls in (ReadFile, EditFile, WriteFile, Glob, Grep, Bash):
         registry.register(RoutedTool(cls(), channel))
+    from .mcp_bridge import BoundMCPTool
+
+    for schema in data.get("mcp_schemas", []):
+        registry.register(RoutedTool(BoundMCPTool(schema), channel))
     private = Path(data["private_dir"])
     (private / "tool-results").mkdir(mode=0o700, parents=True, exist_ok=True)
     agent = WebAgent(
-        client=providers.client(supplied),
+        client=Model(),
         registry=registry,
         protocol=supplied.protocol,
         work_dir=str(directory),
@@ -194,17 +239,29 @@ async def run(data, channel):
         max_iterations=snap["budget"]["max_iterations"],
         hook_engine=RoutedHooks(data["hooks"], channel) if data.get("hooks") else None,
         permission_checker=checker(
-            data["root"], snap["permission_mode"], Path(data["rules"]), snap["sandbox"]
+            data["root"],
+            snap["permission_mode"],
+            Path(data["rules"]),
+            snap["sandbox"],
+            data.get("policy"),
         ),
         context_window=snap["context_window"],
-        instructions_content=data["instructions"],
+        instructions_content="\n".join(
+            [
+                data["instructions"],
+                *[
+                    f"Skill {name}\n{body}"
+                    for name, body in data.get("skills", {}).items()
+                ],
+            ]
+        ),
     )
     agent.session_id = data["session_id"]
     records = [SessionRecord.from_jsonl(x) for x in data["history"]]
     boundary = max(
         (i for i, r in enumerate(records) if r.is_compact_boundary()), default=0
     )
-    conv = ConversationManager(history=records_to_messages(records[boundary:]))
+    conv = SessionConversation(history=records_to_messages(records[boundary:]))
     for msg in conv.history:
         msg.persisted = True
     history_file = private / "history.jsonl"
@@ -218,12 +275,22 @@ async def run(data, channel):
 
     async def persist(record):
         serialized = record.to_jsonl()
+        if supplied.api_key:
+            from .profiles import redact
+
+            value = json.loads(serialized)
+            for field in ("content", "tool_uses", "tool_results"):
+                if field in value:
+                    value[field] = redact(value[field], supplied.api_key)
+            serialized = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         await emit("native_record", record=serialized)
         if record.role == "assistant" and not record.is_compact_boundary():
             await emit("message_final", message_id=message)
         with history_file.open("a") as stream:
             stream.write(serialized + "\n")
 
+    for name in data.get("skills", {}):
+        await emit("extension", extension="Skill", name=name, status="loaded")
     async for ev in agent.run(conv):
         if isinstance(ev, native.ToolUseEvent):
             if (
@@ -277,10 +344,18 @@ async def run(data, channel):
             )
         elif isinstance(ev, native.CompactNotification):
             if ev.boundary is not None:
-                await persist(
-                    make_compact_boundary(ev.boundary.summary, ev.boundary.keep)
+                boundary_record = make_compact_boundary(
+                    ev.boundary.summary, ev.boundary.keep
                 )
-            await emit("compact", text=ev.message)
+                await persist(boundary_record)
+                for message_in_boundary in conv.history:
+                    message_in_boundary.persisted = True
+            await emit(
+                "compact",
+                text=ev.message,
+                boundary=ev.boundary is not None,
+                kept=len(ev.boundary.keep) if ev.boundary else 0,
+            )
         elif isinstance(ev, native.ErrorEvent):
             failure = ev.message
             await emit("error", text=ev.message)
@@ -299,12 +374,28 @@ async def run(data, channel):
 
 
 def main():
+    import threading
+    import time
+
+    parent = int(os.environ.get("CODING_OWNER_PID", os.getppid()))
+
+    def watch_parent():
+        while os.getppid() == parent and parent != 1:
+            time.sleep(0.5)
+        os._exit(1)
+
+    threading.Thread(target=watch_parent, daemon=True).start()
     source, sink = sys.stdin.buffer, sys.stdout.buffer
     sys.stdout = sys.stderr
     first = json.loads(source.readline(MAX_FRAME))
     channel = Channel(first["instance"], source, sink)
 
     async def supervise():
+        import signal
+
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+        loop.add_signal_handler(signal.SIGUSR1, task.cancel)
         try:
             await run(first, channel)
         except (BrokenPipeError, ConnectionError):

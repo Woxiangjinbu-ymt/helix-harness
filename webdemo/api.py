@@ -1,10 +1,12 @@
 """本机 Web 入口。业务资源在各自的路由内装配。"""
 
+import sqlite3
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
-import sqlite3
 
 from fastapi import FastAPI
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -14,6 +16,14 @@ from .coding import routes as coding_routes
 
 @asynccontextmanager
 async def lifespan(app):
+    from .coding.store import data_dir
+
+    if (data_dir() / "coding.sqlite").exists():
+        try:
+            coding_routes.manager().activate()
+        except (OSError, sqlite3.DatabaseError):
+            # 其他模块可独立启动，Coding 路由在访问时重试并报告存储状态。
+            pass
     try:
         yield
     finally:
@@ -43,6 +53,13 @@ async def local_only(request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation(request, exc):
+    if request.url.path.startswith("/api/coding/profiles"):
+        return JSONResponse({"detail": "Provider 配置字段无效"}, status_code=422)
+    return await request_validation_exception_handler(request, exc)
+
+
 @app.exception_handler(KeyError)
 def not_found(request, exc):
     return JSONResponse({"detail": "Record not found"}, status_code=404)
@@ -53,9 +70,11 @@ def bad_input(request, exc):
     return JSONResponse({"detail": str(exc)}, status_code=422)
 
 
-@app.exception_handler(sqlite3.OperationalError)
+@app.exception_handler(sqlite3.DatabaseError)
 def storage_error(request, exc):
-    return JSONResponse({"detail": "进度存储不可用"}, status_code=503)
+    return JSONResponse(
+        {"detail": "进度存储不可用", "code": "storage_error"}, status_code=503
+    )
 
 
 @app.get("/api/coding/health")

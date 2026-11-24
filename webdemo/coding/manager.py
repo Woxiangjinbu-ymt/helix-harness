@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import re
+import shutil
+import sqlite3
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,6 +24,7 @@ from mewcode.tools.write_file import WriteFile
 from webdemo import providers
 
 from . import actions, profiles, worker
+from .mcp_bridge import BoundMCPTool
 from .models import Conflict
 from .runtime_adapter import checker
 from .store import digest, encode, now, uid
@@ -45,8 +49,12 @@ class Running:
     waiting: dict = field(default_factory=dict)
     secret: str = field(default="", repr=False)
     hooks: list = field(default_factory=list)
+    mcp: dict = field(default_factory=dict)
+    mcp_tools: dict = field(default_factory=dict)
+    policy: list | None = None
     process: object = None
     unsafe: bool = False
+    stop: asyncio.Event = field(default_factory=asyncio.Event)
     last_seq: int = 0
     last_request: str = ""
     last_reply: dict = field(default_factory=dict)
@@ -57,19 +65,181 @@ class Manager:
         self.store = store
         self.running = {}
         self.tasks = set()
+        self.owner = None
+        self.closing = False
+        self.faults = {}
+        self.reaper = None
+
+    def activate(self):
+        if self.owner:
+            return
+        owner = (self.store.root / "service.lock").open("a")
+        try:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.store.connection(True) as db:
+                for row in db.execute(
+                    "SELECT session,id FROM turns WHERE ended IS NULL"
+                ).fetchall():
+                    sid, tid = row
+                    db.execute(
+                        "UPDATE turns SET state='interrupted',ended=?,reason=? WHERE id=?",
+                        (now(), "服务中断，执行实例已失联", tid),
+                    )
+                    db.execute(
+                        "UPDATE permissions SET state='expired' WHERE turn=? AND state IN ('waiting','answered')",
+                        (tid,),
+                    )
+                    db.execute(
+                        "UPDATE leases SET state='draining' WHERE turn=?", (tid,)
+                    )
+                    self.store.event(
+                        db,
+                        sid,
+                        tid,
+                        "terminal",
+                        "state",
+                        {"state": "interrupted", "reason": "服务中断，执行实例已失联"},
+                    )
+            self.reconcile()
+        except BaseException:
+            owner.close()
+            raise
+        self.owner = owner
+        self.closing = False
+        self.reaper = asyncio.create_task(self.reap())
+
+    def reconcile(self):
+        with self.store.connection() as db:
+            pending = db.execute("""SELECT a.*,t.session FROM actions a JOIN turns t ON t.id=a.turn
+                                  WHERE a.state='running' AND t.ended IS NOT NULL""").fetchall()
+        if not pending:
+            return
+        cleaned = []
+        with self.store.connection(True) as db:
+            for action in pending:
+                sid, tid, aid = action["session"], action["turn"], action["id"]
+                process = None
+                for row in db.execute(
+                    "SELECT kind,payload FROM events WHERE turn=? AND kind IN ('process_started','process_exited') ORDER BY seq",
+                    (tid,),
+                ):
+                    p = json.loads(row["payload"])
+                    if p.get("action_id") == aid:
+                        process = p["job"] if row["kind"] == "process_started" else None
+                self.store.event(
+                    db,
+                    sid,
+                    tid,
+                    "unknown/" + aid,
+                    "unknown_result",
+                    {
+                        "call_id": action["call"],
+                        "action_id": aid,
+                        "tool": action["target"],
+                    },
+                )
+                if process:
+                    if not re.fullmatch(
+                        r"local\.mewcode\.coding\.[a-f0-9]{32}", process
+                    ):
+                        continue
+                    proof = self.store.root / "commands" / process / "clean"
+                    if not proof.is_file() or proof.read_text() != process:
+                        continue
+                    try:
+                        actions.clear_command_files(proof.parent)
+                    except OSError:
+                        continue
+                    cleaned.append(proof.parent)
+                db.execute(
+                    "UPDATE actions SET state='unknown' WHERE turn=? AND id=? AND state='running'",
+                    (tid, aid),
+                )
+                db.execute(
+                    """UPDATE leases SET state='free',turn=NULL,worker=NULL WHERE turn=? AND worker=?
+                           AND generation=? AND NOT EXISTS(SELECT 1 FROM actions WHERE turn=? AND state='running' AND generation=?)""",
+                    (
+                        tid,
+                        action["worker"],
+                        action["generation"],
+                        tid,
+                        action["generation"],
+                    ),
+                )
+
+        for folder in cleaned:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    async def reap(self):
+        while True:
+            await asyncio.sleep(1)
+            try:
+                self.reconcile()
+            except sqlite3.DatabaseError:
+                continue
 
     async def shutdown(self):
+        self.closing = True
+        if self.reaper:
+            self.reaper.cancel()
+            await asyncio.gather(self.reaper, return_exceptions=True)
         pending = list(self.tasks)
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
+        if self.owner:
+            self.owner.close()
+            self.owner = None
+
+    async def report_delayed_cleanup(self, job):
+        await asyncio.sleep(2)
+        with self.store.connection(True) as db:
+            row = db.execute(
+                "SELECT state FROM turns WHERE id=? AND worker=?",
+                (job.tid, job.instance),
+            ).fetchone()
+            if row and row[0] == "cancelling":
+                self.append(
+                    db,
+                    job,
+                    "cleaning",
+                    {"reason": "清理耗时较长，等待本轮子进程退出和临时资源核验"},
+                    "delayed-cleanup",
+                )
+
+    def cancel(self, sid, tid, request):
+        result = self.store.cancel(sid, tid, request)
+        job = self.running.get(tid)
+        if (
+            result["state"] == "cancelling"
+            and job is not None
+            and not job.stop.is_set()
+        ):
+            job.stop.set()
+            report = asyncio.create_task(self.report_delayed_cleanup(job))
+            self.tasks.add(report)
+            report.add_done_callback(self.tasks.discard)
+            for future in job.waiting.values():
+                if not future.done():
+                    future.set_exception(Conflict("轮次已取消"))
+            if job.process and job.process.returncode is None:
+                stop_task = asyncio.create_task(worker.stop_turn(job.process))
+                self.tasks.add(stop_task)
+                stop_task.add_done_callback(self.tasks.discard)
+        return result
 
     def submit(self, sid, request, text):
+        if sid in self.faults:
+            with self.store.connection() as db:
+                receipt = self.store.existing(db, sid + "/submit", request, text)
+                if receipt is not None:
+                    return receipt
+            raise sqlite3.OperationalError("进度存储不可用")
         result, created = self.store.submit(
             sid,
             request,
             text,
-            lambda profile: profiles.snapshot(profile, self.store.root),
+            lambda profile: profiles.for_session(self.store, sid, profile),
         )
         if created:
             task = asyncio.create_task(self.execute(sid, result["turn_id"]))
@@ -90,13 +260,7 @@ class Manager:
             tree = Worktree(**session["identity"])
             directory = tree.verify(session["cwd_relative"])
             snap = json.loads(row["document"])
-            config, provider = providers.select(snap["provider"])
-            secret = provider.resolve_api_key()
-            if (
-                profiles.credential_version(self.store.root, secret)
-                != snap["credential_ref"]
-            ):
-                raise ValueError("模型凭据已变更")
+            secret = profiles.secret_for(snap, self.store)
             rules = (
                 self.store.root
                 / "permissions"
@@ -121,9 +285,24 @@ class Manager:
                 scratch,
                 secret=secret,
             )
-            definitions, refs = profiles.command_hooks(config)
-            if refs != snap["extensions"]["hooks"]:
-                raise ValueError("Hook 配置已在轮次接手前改变")
+            if "bindings" in snap:
+                material = json.loads(
+                    (self.store.root / "bindings" / snap["bindings"]).read_text()
+                )
+                if (
+                    profiles.credential_version(self.store.root, encode(material))
+                    != snap["bindings"]
+                ):
+                    raise ValueError("配置材料校验失败")
+                definitions = list(material["hooks"].values())
+            else:
+                config, _ = providers.select(snap["provider"])
+                definitions, refs = profiles.command_hooks(config)
+                if refs != snap["extensions"]["hooks"]:
+                    raise ValueError("Hook 配置已变化")
+                material = {"skills": {}, "mcp": {}}
+            job.mcp = material["mcp"]
+            job.policy = material.get("policy")
             from mewcode.hooks.loader import load_hooks
 
             job.hooks = load_hooks(definitions)
@@ -159,22 +338,31 @@ class Manager:
                 "credential": secret,
                 "history": records,
                 "hooks": definitions,
+                "skills": material["skills"],
+                "policy": job.policy,
                 "instructions": "\n".join(instructions),
             }
 
     def append(self, db, job, kind, data, source=None):
-        if job.secret:
-
-            def redact(item):
-                if isinstance(item, str):
-                    return item.replace(job.secret, "[redacted]")
-                if isinstance(item, list):
-                    return [redact(x) for x in item]
-                if isinstance(item, dict):
-                    return {k: redact(v) for k, v in item.items()}
-                return item
-
-            data = redact(data)
+        if job.secret and kind != "native_record":
+            data = {
+                k: profiles.redact(v, job.secret)
+                if k
+                in (
+                    "text",
+                    "args",
+                    "output",
+                    "error",
+                    "reason",
+                    "feedback",
+                    "description",
+                    "scope",
+                    "command",
+                    "rule_error",
+                )
+                else v
+                for k, v in data.items()
+            }
         return self.store.event(db, job.sid, job.tid, source or uid(), kind, data)
 
     async def extension(self, job, p):
@@ -231,6 +419,8 @@ class Manager:
             ).fetchone()
             if not row or row["ended"] is not None:
                 return
+            if row["state"] == "cancelling":
+                state, reason = "cancelled", None
             if db.execute(
                 "SELECT 1 FROM actions WHERE turn=? AND state='running'", (tid,)
             ).fetchone():
@@ -244,8 +434,20 @@ class Manager:
                 "UPDATE permissions SET state='expired' WHERE turn=? AND state IN ('waiting','answered')",
                 (tid,),
             )
+            error_type = (
+                "storage"
+                if sid in self.faults
+                else "model"
+                if state == "failed"
+                else None
+            )
             self.store.event(
-                db, sid, tid, "terminal", "state", {"state": state, "reason": reason}
+                db,
+                sid,
+                tid,
+                "terminal",
+                "state",
+                {"state": state, "reason": reason, "error_type": error_type},
             )
 
     async def execute(self, sid, tid):
@@ -254,7 +456,39 @@ class Manager:
         try:
             job, initial = self.start_data(sid, tid)
             self.running[tid] = job
+            schemas = []
+            for name, config in job.mcp.items():
+                try:
+                    found = await self.probe(
+                        job.tree, job.tree.verify(job.relative), config, job.stop
+                    )
+                    for schema in found:
+                        tool = BoundMCPTool(schema)
+                        if tool.name in TOOLS or tool.name in job.mcp_tools:
+                            raise ValueError("重复的 MCP 工具名")
+                        job.mcp_tools[tool.name] = (config, tool)
+                        schemas.append(schema)
+                    binding = {
+                        "extension": "MCP",
+                        "name": name,
+                        "status": "connected",
+                        "tools": [x["name"] for x in found],
+                    }
+                except ValueError as exc:
+                    binding = {
+                        "extension": "MCP",
+                        "name": name,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                with self.store.connection(True) as db:
+                    self.append(db, job, "extension", binding)
+            initial["mcp_schemas"] = schemas
+            if job.stop.is_set():
+                return
             proc = job.process = await worker.start_process()
+            if job.stop.is_set():
+                return
             await worker.send(proc.stdin, initial)
             reads = []
 
@@ -297,7 +531,15 @@ class Manager:
             if await proc.wait() != 0 and final == "completed":
                 final, reason = "failed", "执行进程异常退出"
         except Exception as exc:  # noqa: BLE001 — 进程故障边界需提交轮次终态
-            final, reason = "failed", str(exc)
+            storage = isinstance(exc, sqlite3.DatabaseError) or (
+                isinstance(exc, BaseExceptionGroup)
+                and exc.subgroup(sqlite3.DatabaseError) is not None
+            )
+            if storage:
+                self.faults[sid] = "进度存储不可用，已停止派发工具"
+                if job:
+                    job.stop.set()
+            final, reason = "failed", self.faults.get(sid, str(exc))
         finally:
             if job and job.process and job.process.returncode is None:
                 with suppress(ProcessLookupError):
@@ -306,7 +548,44 @@ class Manager:
             if job and job.secret and reason:
                 reason = reason.replace(job.secret, "[redacted]")
             self.running.pop(tid, None)
-            self.finalize(sid, tid, final, reason)
+            while True:
+                try:
+                    self.finalize(sid, tid, final, reason)
+                    self.faults.pop(sid, None)
+                    break
+                except sqlite3.DatabaseError:
+                    self.faults[sid] = "进度存储不可用，已停止派发工具"
+                    if self.closing:
+                        break
+                    await asyncio.sleep(0.5)
+
+    async def probe(self, tree, cwd, config, stop=None):
+        async def quiet(kind, value):
+            pass
+
+        result = await actions.run_shell(
+            tree,
+            cwd,
+            "MCP discovery",
+            25,
+            self.store.root,
+            quiet,
+            bridge={"config": config, "operation": "discover"},
+            stop=stop,
+        )
+        if result["is_error"]:
+            raise ValueError("MCP 服务无法连接")
+        try:
+            data = json.loads(result["output"])
+            tools = data.get("tools")
+        except (KeyError, ValueError) as exc:
+            raise ValueError("MCP 服务无法列出工具") from exc
+
+        if tools is None:
+            raise ValueError(
+                config["name"] + " · " + data.get("error", "MCP 工具列表无效")
+            )
+        return tools
 
     async def dispatch(self, job, message):
         return await self.respond(job, message, self.accept_frame(job, message))
@@ -345,6 +624,11 @@ class Manager:
         return reply
 
     async def handle(self, job, kind, p):
+        if job.stop.is_set():
+            raise Conflict("轮次已取消")
+        if kind == "model_permission":
+            profiles.secret_for(job.snapshot, self.store)
+            return True
         if kind == "ready":
             with self.store.connection(True) as db:
                 changed = db.execute(
@@ -498,11 +782,15 @@ class Manager:
         call, aid = p["call_id"], p["action_id"]
         info = job.calls[call]
         tool, args = info["tool"], info["args"]
-        if tool not in TOOLS or (
+        if job.secret and profiles.redact(args, job.secret) != args:
+            raise ValueError("工具参数包含模型凭据")
+        binding = job.mcp_tools.get(tool)
+        bound_tool = binding[1] if binding else TOOLS.get(tool)
+        if bound_tool is None or (
             not rule
             and (
                 tool != p["tool"]
-                or TOOLS[tool].params_model.model_validate(args).model_dump()
+                or bound_tool.params_model.model_validate(args).model_dump()
                 != p["args"]
             )
         ):
@@ -514,18 +802,14 @@ class Manager:
             if receipt is not None:
                 return receipt
         cwd = job.tree.verify(job.relative)
-        _, provider = providers.select(job.snapshot["provider"])
-        if (
-            profiles.credential_version(self.store.root, provider.resolve_api_key())
-            != job.snapshot["credential_ref"]
-        ):
-            raise ValueError("模型凭据已撤销")
+        profiles.secret_for(job.snapshot, self.store)
         decision = checker(
             job.tree.root,
             job.snapshot["permission_mode"],
             job.rules,
             job.snapshot["sandbox"],
-        ).check(TOOLS[tool], args)
+            job.policy,
+        ).check(bound_tool, args)
         if decision.effect == "deny":
             raise ValueError(decision.reason)
         if decision.effect == "ask" and not rule:
@@ -548,7 +832,7 @@ class Manager:
                 if reply["decision"] == "allow_always":
                     await self.action(job, {"call_id": call, "action_id": uid()}, True)
                 return await self.action(job, p)
-        writable = rule or tool in ("Bash", "WriteFile", "EditFile")
+        writable = rule or bool(binding) or tool in ("Bash", "WriteFile", "EditFile")
         with self.store.connection(True) as db:
             if db.execute(
                 "SELECT state FROM turns WHERE id=? AND worker=?",
@@ -615,10 +899,30 @@ class Manager:
                 },
             )
 
+        def guard():
+            if job.stop.is_set():
+                raise Conflict("轮次已取消")
+            job.tree.verify(job.relative)
+            profiles.secret_for(job.snapshot, self.store)
+            if (
+                checker(
+                    job.tree.root,
+                    job.snapshot["permission_mode"],
+                    job.rules,
+                    job.snapshot["sandbox"],
+                    job.policy,
+                )
+                .check(bound_tool, args)
+                .effect
+                == "deny"
+            ):
+                raise ValueError("策略禁止执行")
+
         async def note(kind, value):
             with self.store.connection(True) as db:
                 self.append(db, job, kind, dict(call_id=call, action_id=aid, **value))
             if kind == "process_started":
+                guard()
                 job.unsafe = True
             if kind == "process_exited":
                 job.unsafe = False
@@ -644,6 +948,30 @@ class Manager:
                     "is_error": False,
                     "scope": self.scope(info),
                 }
+            elif binding:
+                config, remote = binding
+                bridge = {
+                    "operation": "call",
+                    "tool": tool,
+                    "schema": remote.schema,
+                    "config": config,
+                    "args": args,
+                }
+                response = await actions.run_shell(
+                    job.tree,
+                    cwd,
+                    tool,
+                    min(120, job.snapshot["budget"]["command_timeout"]),
+                    self.store.root,
+                    note,
+                    stop=job.stop,
+                    bridge=bridge,
+                )
+                if response["is_error"]:
+                    raise ValueError("MCP 调用中断")
+                result = json.loads(response["output"])
+                if "output" not in result:
+                    raise ValueError("MCP 工具调用失败")
             elif tool == "Bash":
                 for name, last in job.reads.items():
                     try:
@@ -657,9 +985,16 @@ class Manager:
                     job.tree,
                     cwd,
                     args["command"],
-                    max(1, min(600, args.get("timeout", 120))),
+                    max(
+                        1,
+                        min(
+                            job.snapshot["budget"].get("command_timeout", 600),
+                            args.get("timeout", 120),
+                        ),
+                    ),
                     self.store.root,
                     note,
+                    stop=job.stop,
                 )
                 after = await asyncio.to_thread(job.tree.file_stamps)
                 result["touched"] = sorted(
@@ -685,7 +1020,13 @@ class Manager:
                 result = {"output": read.output, "is_error": read.is_error}
             else:
                 result = await actions.file_action(
-                    job.tree, job.relative, tool, args, job.reads, job.scratch
+                    job.tree,
+                    job.relative,
+                    tool,
+                    args,
+                    job.reads,
+                    job.scratch,
+                    **({"guard": guard} if writable else {}),
                 )
         except (ValueError, OSError, RuntimeError, re.error) as exc:
             result = {"output": str(exc), "is_error": True}
