@@ -1,0 +1,82 @@
+{
+  "starter_score": 40,
+  "checks": [
+    {
+      "input": {
+        "record": {
+          "id": "r1",
+          "labels": [
+            "green"
+          ]
+        }
+      },
+      "expected": {
+        "id": "r1",
+        "labels": [
+          "green"
+        ]
+      }
+    },
+    {
+      "input": {
+        "record": {
+          "name": "r2",
+          "tags": " z ,a,, z"
+        }
+      },
+      "expected": {
+        "id": "r2",
+        "labels": [
+          "a",
+          "z"
+        ]
+      }
+    },
+    {
+      "input": {
+        "record": {
+          "name": "r3"
+        }
+      },
+      "expected": {
+        "id": "r3",
+        "labels": []
+      }
+    },
+    {
+      "input": {
+        "record": {
+          "id": "new",
+          "name": "old",
+          "tags": "stale",
+          "labels": [
+            " beta",
+            "",
+            "alpha",
+            "beta"
+          ]
+        }
+      },
+      "expected": {
+        "id": "new",
+        "labels": [
+          "alpha",
+          "beta"
+        ]
+      }
+    },
+    {
+      "input": {
+        "record": {
+          "id": "r4",
+          "tags": "stale",
+          "labels": []
+        }
+      },
+      "expected": {
+        "id": "r4",
+        "labels": []
+      }
+    }
+  ]
+}

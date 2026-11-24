@@ -1,0 +1,4 @@
+stages:
+  - inspect
+  - implement
+  - verify

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "id": "repo-python-v1",
+  "cases": [
+    "availability-window",
+    "record-upgrade",
+    "page-settings"
+  ]
+}

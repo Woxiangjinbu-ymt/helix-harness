@@ -18,35 +18,35 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 
 ## 文件清单
 
-路径相对 MewCode 项目根目录。任务表中 Web 后端短路径相对 `webdemo/`，`src/` 路径相对 `webdemo/frontend/`，`webdemo/tests/`、`mewcode/`、`tests/rsi/` 和 `docs/` 均从项目根目录起算。`checklist.md` 已批准，用于逐项登记验收结果。
+路径相对 MewCode 项目根目录。任务表中 Web 后端短路径相对 `helix_harness/`，`src/` 路径相对 `helix_harness/frontend/`，`helix_harness/tests/`、`mewcode/`、`tests/rsi/` 和 `docs/` 均从项目根目录起算。`checklist.md` 已批准，用于逐项登记验收结果。
 
 | 文件操作 | 职责 | 文件 |
 | --- | --- | --- |
-| 调整 | 本地入口与 RSI 作业存储 | `webdemo/api.py`、`webdemo/store.py`、`webdemo/worker.py`、`webdemo/catalog.py`、`webdemo/mock.py` |
-| 新增 | RSI 路由与共享 Provider 装配 | `webdemo/rsi_api.py`、`webdemo/providers.py` |
-| 新增 | Coding 会话、轮次、事件及事务 | `webdemo/coding/models.py`、`webdemo/coding/store.py`、`webdemo/coding/manager.py`、`webdemo/coding/routes.py` |
-| 新增 | 工作树登记、进程监督、Runtime 适配与执行许可 | `webdemo/coding/worktrees.py`、`webdemo/coding/worker.py`、`webdemo/coding/runtime_adapter.py`、`webdemo/coding/actions.py` |
-| 新增 | 配置快照、起始材料、RSI 候选与两个跨模块入口 | `webdemo/coding/profiles.py`、`webdemo/coding/exports.py`、`webdemo/candidates.py`、`webdemo/exchange.py` |
-| 新增 | 普通会话工作台、设置、事件视图及前端客户端 | `webdemo/frontend/src/pages/CodingWorkspace.tsx`、`webdemo/frontend/src/pages/CodingSettings.tsx`、`webdemo/frontend/src/components/CodingTimeline.tsx`、`webdemo/frontend/src/lib/coding.ts` |
-| 调整 | 主导航、RSI 专用上下文、现有实验 API 客户端 | `webdemo/frontend/src/main.tsx`、`webdemo/frontend/src/lib/workspaceContext.tsx`、`webdemo/frontend/src/lib/api.ts` |
-| 调整 | 工作台面板样式和双语文案 | `webdemo/frontend/src/styles/pages.css`、`webdemo/frontend/src/i18n/types.ts`、`webdemo/frontend/src/i18n/zh.ts`、`webdemo/frontend/src/i18n/en.ts` |
-| 新增 | RSI 题集页 | `webdemo/frontend/src/pages/Benchmarks.tsx` |
-| 调整 | 实验概览、单题、评测、进化与版本页 | `webdemo/frontend/src/pages/Dashboard.tsx`、`webdemo/frontend/src/pages/Workspace.tsx`、`webdemo/frontend/src/pages/Evaluations.tsx`、`webdemo/frontend/src/pages/Evolution.tsx`、`webdemo/frontend/src/pages/Versions.tsx` |
+| 调整 | 本地入口与 RSI 作业存储 | `helix_harness/api.py`、`helix_harness/store.py`、`helix_harness/worker.py`、`helix_harness/catalog.py`、`helix_harness/mock.py` |
+| 新增 | RSI 路由与共享 Provider 装配 | `helix_harness/rsi_api.py`、`helix_harness/providers.py` |
+| 新增 | Coding 会话、轮次、事件及事务 | `helix_harness/coding/models.py`、`helix_harness/coding/store.py`、`helix_harness/coding/manager.py`、`helix_harness/coding/routes.py` |
+| 新增 | 工作树登记、进程监督、Runtime 适配与执行许可 | `helix_harness/coding/worktrees.py`、`helix_harness/coding/worker.py`、`helix_harness/coding/runtime_adapter.py`、`helix_harness/coding/actions.py` |
+| 新增 | 配置快照、起始材料、RSI 候选与两个跨模块入口 | `helix_harness/coding/profiles.py`、`helix_harness/coding/exports.py`、`helix_harness/candidates.py`、`helix_harness/exchange.py` |
+| 新增 | 普通会话工作台、设置、事件视图及前端客户端 | `helix_harness/frontend/src/pages/CodingWorkspace.tsx`、`helix_harness/frontend/src/pages/CodingSettings.tsx`、`helix_harness/frontend/src/components/CodingTimeline.tsx`、`helix_harness/frontend/src/lib/coding.ts` |
+| 调整 | 主导航、RSI 专用上下文、现有实验 API 客户端 | `helix_harness/frontend/src/main.tsx`、`helix_harness/frontend/src/lib/workspaceContext.tsx`、`helix_harness/frontend/src/lib/api.ts` |
+| 调整 | 工作台面板样式和双语文案 | `helix_harness/frontend/src/styles/pages.css`、`helix_harness/frontend/src/i18n/types.ts`、`helix_harness/frontend/src/i18n/zh.ts`、`helix_harness/frontend/src/i18n/en.ts` |
+| 新增 | RSI 题集页 | `helix_harness/frontend/src/pages/Benchmarks.tsx` |
+| 调整 | 实验概览、单题、评测、进化与版本页 | `helix_harness/frontend/src/pages/Dashboard.tsx`、`helix_harness/frontend/src/pages/Workspace.tsx`、`helix_harness/frontend/src/pages/Evaluations.tsx`、`helix_harness/frontend/src/pages/Evolution.tsx`、`helix_harness/frontend/src/pages/Versions.tsx` |
 | 调整 | 谱系控制库、版本决策和固定计划的单题调度 | `mewcode/rsi/versions.py`、`mewcode/rsi/orchestrator.py` |
-| 新增测试 | Coding 生命周期与跨模块契约 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/test_exchange.py` |
-| 扩展测试 | HTTP 冒烟、浏览器、恢复和版本事务 | `webdemo/tests/api_smoke.py`、`webdemo/tests/browser.py`、`webdemo/tests/recovery.py`、`tests/rsi/test_day4.py` |
+| 新增测试 | Coding 生命周期与跨模块契约 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py` |
+| 扩展测试 | HTTP 冒烟、浏览器、恢复和版本事务 | `helix_harness/tests/api_smoke.py`、`helix_harness/tests/browser.py`、`helix_harness/tests/recovery.py`、`tests/rsi/test_day4.py` |
 | 复用 | 原生执行、对话恢复、模型及权限 | `mewcode/agent.py`、`mewcode/memory/session.py`、`mewcode/config.py`、`mewcode/client.py`、`mewcode/permissions/checker.py`、`mewcode/tools/bash.py` |
 | 复用 | 原生 Hooks、Skills、MCP 和两种原生入口 | `mewcode/hooks/engine.py`、`mewcode/skills/loader.py`、`mewcode/mcp/manager.py`、`mewcode/__main__.py`、`mewcode/app.py` |
 | 复用 | 独立评分、证据核验、实验 Runtime、策略与冻结校验 | `mewcode/rsi/evaluator.py`、`mewcode/rsi/matrix.py`、`mewcode/rsi/runtime.py`、`mewcode/rsi/strategy.py`、`mewcode/rsi/fixtures.py` |
-| 复用 | 文件、Diff 视图及已有构建入口 | `webdemo/frontend/src/components/CodeViewer.tsx`、`webdemo/frontend/src/components/DiffViewer.tsx`、`webdemo/frontend/package.json` |
+| 复用 | 文件、Diff 视图及已有构建入口 | `helix_harness/frontend/src/components/CodeViewer.tsx`、`helix_harness/frontend/src/components/DiffViewer.tsx`、`helix_harness/frontend/package.json` |
 | 更新阶段记录 | 实施后逐项更新任务与验收结果 | `docs/redesign/task.md`、`docs/redesign/checklist.md` |
 
 ## 测试入口
 
-- Coding 存储、进程、权限与恢复的小改动用临时 Git 仓库和独立数据库复核，通过 `.venv/bin/python -B -m pytest -q webdemo/tests/test_coding_lifecycle.py` 运行。跨模块用例对应 `webdemo/tests/test_exchange.py`，版本事务用例对应 `tests/rsi/test_day4.py`，可以按 pytest 节点 ID 单独执行。HTTP 路由装配前直接测试其处理函数，接通后再验证相同输入的 HTTP 结果。每项的测试列给出输入或操作和可判定的结果。
-- 前端使用 `npm --prefix webdemo/frontend run build`。从项目根按 [Web 服务与测试说明](../../webdemo/README.md) 启动独立验收实例，执行 `.venv/bin/python webdemo/tests/api_smoke.py` 和 `.venv/bin/python webdemo/tests/recovery.py`。原生及 RSI 全量回归用 `.venv/bin/python -B -m pytest -q tests`。
-- 浏览器用 `.venv/bin/python webdemo/tests/browser.py --phase <场景名>`。保留已有 `dashboard,coding,evolve,history,cancellation,registered` 和 RSI 的 `real` 场景。T224、T225–T226 与 T511–T512 分别交付 `coding_real`、`coding_long` 和 `coding_rsi_roundtrip`。真实模型验收使用服务端实际配置的 Provider，记录模型身份和运行 ID。受控的竞态、错误和版本决策样例记录其演示来源。
-- 每次验证使用该行指定的业务入口。数据库断写、服务中断、链接指向范围外和回滚并发等故障注入均使用验收副本。用 [项目测试约定](../../AGENT.md) 中的 tmux 流程核对真实 TUI 会话。
+- Coding 存储、进程、权限与恢复的小改动用临时 Git 仓库和独立数据库复核，通过 `.venv/bin/python -B -m pytest -q helix_harness/tests/test_coding_lifecycle.py` 运行。跨模块用例对应 `helix_harness/tests/test_exchange.py`，版本事务用例对应 `tests/rsi/test_day4.py`，可以按 pytest 节点 ID 单独执行。HTTP 路由装配前直接测试其处理函数，接通后再验证相同输入的 HTTP 结果。每项的测试列给出输入或操作和可判定的结果。
+- 前端使用 `npm --prefix helix_harness/frontend run build`。从项目根按 [Web 服务与测试说明](../../helix_harness/README.md) 启动独立验收实例，执行 `.venv/bin/python helix_harness/tests/api_smoke.py` 和 `.venv/bin/python helix_harness/tests/recovery.py`。原生及 RSI 全量回归用 `.venv/bin/python -B -m pytest -q vendor/mewcode-runtime/tests`。
+- 浏览器用 `.venv/bin/python helix_harness/tests/browser.py --phase <场景名>`。保留已有 `dashboard,coding,evolve,history,cancellation,registered` 和 RSI 的 `real` 场景。T224、T225–T226 与 T511–T512 分别交付 `coding_real`、`coding_long` 和 `coding_rsi_roundtrip`。真实模型验收使用服务端实际配置的 Provider，记录模型身份和运行 ID。受控的竞态、错误和版本决策样例记录其演示来源。
+- 每次验证使用该行指定的业务入口。数据库断写、服务中断、链接指向范围外和回滚并发等故障注入均使用验收副本。用 [项目测试约定](../../vendor/mewcode-runtime/AGENT.md) 中的 tmux 流程核对真实 TUI 会话。
 
 ## Phase 1 · Coding 核心体验
 
@@ -54,9 +54,9 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T101 · 留下升级前的对照 | 文档批准 | `webdemo/tests/recovery.py`。在改动入口前，用旧版本在隔离目录保存可恢复的原生会话样本、冻结发布标识、旧作业 ID 和只读归档副本的清单。记录轨迹、回执、快照、产物摘要及分数、版本、来源。 | 用原标识打开各样本，独立读取副本得到相同摘要，保留基线供 T513 比对。（AC26） | DONE |
+| T101 · 留下升级前的对照 | 文档批准 | `helix_harness/tests/recovery.py`。在改动入口前，用旧版本在隔离目录保存可恢复的原生会话样本、冻结发布标识、旧作业 ID 和只读归档副本的清单。记录轨迹、回执、快照、产物摘要及分数、版本、来源。 | 用原标识打开各样本，独立读取副本得到相同摘要，保留基线供 T513 比对。（AC26） | DONE |
 | T102 · 分离旧作业路由 | T101 | `api.py`、`rsi_api.py`。将现有 RSI 路由登记移到独立路由组，保留旧路径和本机写请求校验。 | 用旧作业 ID 查详情和事件仍成功，来自非受信来源的写请求返回 403。（AC05、AC26） | DONE |
-| T103 · 隔离 RSI 启动资源 | T102 | `api.py`、`rsi_api.py`、`mock.py`。将旧作业库、归档探测和 Mock 服务的启动移到对应业务首次需要的入口。区分应用存活与实验设施状态。 | 禁用评分设施与 Mock 后启动 webdemo.api:app，基础服务仍响应，访问受影响的实验操作才显示原因。（AC19、AC25） | DONE |
+| T103 · 隔离 RSI 启动资源 | T102 | `api.py`、`rsi_api.py`、`mock.py`。将旧作业库、归档探测和 Mock 服务的启动移到对应业务首次需要的入口。区分应用存活与实验设施状态。 | 禁用评分设施与 Mock 后启动 helix_harness.api:app，基础服务仍响应，访问受影响的实验操作才显示原因。（AC19、AC25） | DONE |
 | T104 · 登记实际工作树 | 阶段入口 | `coding/worktrees.py`、`coding/store.py`。从起始目录解析 Git 根与专属 Git 管理目录，以规范路径及设备、文件序号查登记，保留相对起始目录。 | 登记根、子目录和路径别名得到同一工作树 ID，登记同仓库的另一 linked worktree 得到另一 ID。（AC01、AC06） | DONE |
 | T105 · 限制路径解析 | T104 | `coding/worktrees.py`。为现存文件和新目标父目录实现授权范围检查，打开目录或写入前复核真实目标。 | 在临时仓库试普通路径及指向范围外的链接，合法读写成功，越界目标与目录清单保持原值。（AC23） | DONE |
 | T106 · 列出和搜索当前文件 | T105 | `coding/worktrees.py`、`coding/routes.py`。对已登记工作目录提供列表、读取、按名称及内容搜索，包括仍未提交的文件。 | 按名称和文件内的独有文字搜索同一未跟踪文件，结果路径一致，读取与磁盘字节相同。（AC03、AC23） | DONE |
@@ -106,7 +106,7 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 | T135 · 连接文件与差异面板 | T106、T107、T132 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/styles/pages.css`。复用 CodeViewer、DiffViewer 连接浏览、搜索和逐文件 Git 差异。按需展开工具、终端和文件面板。 | 打开暂存与未暂存文件、切换详情再收起，内容和 Git 相符，输入草稿仍在。（AC01、AC03） | DONE |
 | T136 · 生成本轮摘要 | T124、T133、T134、T135 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`。从调用记录汇总测试、未完成项和能归属的变更。对外部混合编辑标明来源未确定。 | 对同文件混合编辑，核对仓库总览含全部修改，本轮摘要的每个确定项都能打开相应调用。（AC03、AC04） | DONE |
 | T137 · 对齐工作台两种语言 | T133、T134、T135、T136 | `src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/pages/CodingWorkspace.tsx`。补齐会话、权限、冲突、未知与失败状态的中英文键，并接入原语言切换。 | 切换两种语言并构建。同一调用状态和权限范围在两个界面均可识别。（AC01、AC04、AC05） | DONE |
-| T138 · 验收第一阶段 | 本阶段全部前项 | `webdemo/tests/browser.py`、`webdemo/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | DONE |
+| T138 · 验收第一阶段 | 本阶段全部前项 | `helix_harness/tests/browser.py`、`helix_harness/tests/test_coding_lifecycle.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在真实 Coding 入口跑解释、修改、测试场景。通过路径别名竞争写入，核对权限、草稿和外部编辑，登记阶段证据。 | 逐项保存 AC01、AC03–AC06 和 AC02 编程部分的运行标识、Git 差异及测试输出。对照磁盘只有获权动作成功。（AC01、AC02、AC03、AC04、AC05、AC06） | DONE |
 
 ### 第一阶段交付记录 · 2026-11-24
 
@@ -114,11 +114,11 @@ T101–T138 已完成。默认入口可以在本机 Git 工作目录创建普通
 
 | 交付 | 实际改动与验证 |
 | --- | --- |
-| 会话与路由 | `webdemo/api.py`、`rsi_api.py`、`providers.py` 与 `coding/{models,store,profiles,routes,worktrees}.py` 分开管理普通会话和实验资源。默认页面只请求 Coding 接口，旧作业 `a53cface0df74ce9b31194f931b8b8ad` 的详情和轨迹仍可通过旧链接打开。|
+| 会话与路由 | `helix_harness/api.py`、`rsi_api.py`、`providers.py` 与 `coding/{models,store,profiles,routes,worktrees}.py` 分开管理普通会话和实验资源。默认页面只请求 Coding 接口，旧作业 `a53cface0df74ce9b31194f931b8b8ad` 的详情和轨迹仍可通过旧链接打开。|
 | Runtime 与工具 | `coding/{manager,worker,runtime_adapter,actions}.py` 让每个活动轮次在独立进程运行原生 Agent。只读调用可并行，写操作、同步命令 Hook 和规则保存经过服务端授权及工作树写入权检查。本机 Shell 用 macOS 沙箱限制文件访问，用独立审计会话的结束通知核对子进程清理。延迟第一个读取的用例中，第二个读取先结束，两个结果仍匹配原调用。|
-| 浏览器 | `frontend/index.html`、`src/main.tsx`、`pages/CodingWorkspace.tsx`、`components/CodingTimeline.tsx`、`lib/{api,coding}.ts`、`styles/pages.css` 与 `i18n/{types,en,zh}.ts` 接入实际会话、草稿、三种权限答复、文件、Diff、终端及轮次摘要。启动说明见 [Web 工作台](../../webdemo/README.md)。 |
+| 浏览器 | `frontend/index.html`、`src/main.tsx`、`pages/CodingWorkspace.tsx`、`components/CodingTimeline.tsx`、`lib/{api,coding}.ts`、`styles/pages.css` 与 `i18n/{types,en,zh}.ts` 接入实际会话、草稿、三种权限答复、文件、Diff、终端及轮次摘要。启动说明见 [Web 工作台](../../helix_harness/README.md)。 |
 | 真实模型验收 | `deepseek-official / deepseek-flash` 在普通浏览器会话 `741ef584-71e7-4ed6-9161-c3a46f067cdc` 运行轮次 `ceed2ce1-c521-41fb-a716-afe7029c23ad`。同一条 `python3 -m unittest` 先退出 1，编辑 `maths.py` 后退出 0，独立重跑通过。[真实模型轮次](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/view.json>) · [Git 补丁](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/changes.diff>) · [独立测试输出](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/real/unittest.txt>) |
-| 自动验证 | 新增 `webdemo/tests/test_coding_lifecycle.py`，扩展 `browser.py`、`recovery.py`。Coding 专项 13 项通过。三个浏览器场景 `coding_workspace`、`coding_controls`、`coding_legacy` 通过。前端构建通过。原生与 RSI 套件 742 项通过、17 项跳过；各跳过原因在测试日志中。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/browser.txt>) · [专项测试](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/lifecycle.txt>) · [原生套件](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/native.txt>) |
+| 自动验证 | 新增 `helix_harness/tests/test_coding_lifecycle.py`，扩展 `browser.py`、`recovery.py`。Coding 专项 13 项通过。三个浏览器场景 `coding_workspace`、`coding_controls`、`coding_legacy` 通过。前端构建通过。原生与 RSI 套件 742 项通过、17 项跳过；各跳过原因在测试日志中。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/browser.txt>) · [专项测试](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/lifecycle.txt>) · [原生套件](</Users/tianmu/Library/Application Support/MewCode/Redesign/T138/native.txt>) |
 | 平台与交接 | Shell 写进程监督在 macOS ARM64 登录会话实测。当前其他平台在命令启动前报告沙箱不可用。第二阶段从 T201 接入取消，随后验收服务重启恢复、Web 配置及扩展、真实多轮续聊和至少 30 分钟的同一任务。 |
 
 ## Phase 2 · Coding 稳定性与日常使用
@@ -157,13 +157,13 @@ T101–T138 已完成。默认入口可以在本机 Git 工作目录创建普通
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T221 · 覆盖动作与请求竞争 | T201、T203、T209、T219 | `webdemo/tests/test_coding_lifecycle.py`。用临时库和独立连接重送轮次、权限、取消与动作，并在完成和取消之间并发提交。 | 运行该文件的竞态用例，确认一个受理、一个终态、一个计数标记。旧许可或越权答复均无法派发。（AC05、AC06、AC07、AC22） | DONE |
-| T222 · 覆盖服务重启与续读 | T207、T208、T209、T211 | `webdemo/tests/recovery.py`。在恢复脚本添加独立 Coding 数据目录、可控中断点和同次会话的客户端/服务端事件比对。 | 运行恢复脚本，分别核对断线补读、未知结果及压缩后的上下文，旧 RSI 恢复场景仍通过。（AC08、AC09、AC10） | DONE |
-| T223 · 验证 Coding 可独立工作 | T212、T214 | `webdemo/tests/api_smoke.py`。在无 Benchmark、归档、Mock 服务及评分设施的环境新建并恢复普通会话，另行检查写请求来源。 | Coding 服务可读取未提交文件并在同一会话继续。无效来源被拒。记录会话 ID 和工具结果。（AC05、AC19） | DONE |
-| T224 · 验收真实多轮与恢复 | T204、T207、T211、T214 | `webdemo/tests/browser.py`。在 browser.py 增加普通会话场景 coding_real，使用真实 Provider 解释失败测试、追问修复、关闭重开再询问。 | 从浏览器取得模型标识、失败与成功的同项测试输出、工具记录和 Git Diff，独立重跑通过。（AC02） | DONE |
-| T225 · 启动长任务并关闭页面 | T203、T207、T218 | `webdemo/tests/browser.py`。在独立验收仓库增加 coding_long 场景，设超过 30 分钟的预算，启动含静默及长输出的本地任务，切换会话后关闭全部页面。 | 保存服务端开始时间、turn_id 和调用标识。确认浏览器上下文无打开页面，服务端任务仍在推进。（AC13） | DONE |
-| T226 · 重开并验收满 30 分钟 | T225 | `webdemo/tests/browser.py`。同一场景重开原会话，查看离线期间的进度。实际运行至少 30 分钟后从 Web 取消并核对清理。 | 同一 turn_id 的服务端开始与取消时间差至少 1800 秒，长输出与终态可查，父子进程回收，另一会话可写。（AC07、AC13） | DONE |
-| T227 · 验收第二阶段 | 本阶段全部前项 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/browser.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。核对路径边界、测试凭据、配置与扩展的实测记录，把真实多轮和长任务证据登记到阶段报告。 | AC02、AC07–AC13 及 AC19、AC22–AC25 的 Coding 部分均有操作与结果。真实编程可在原会话继续后开放第三阶段。（AC02、AC07、AC08、AC09、AC10、AC11、AC12、AC13、AC19、AC22、AC23、AC24、AC25） | DONE |
+| T221 · 覆盖动作与请求竞争 | T201、T203、T209、T219 | `helix_harness/tests/test_coding_lifecycle.py`。用临时库和独立连接重送轮次、权限、取消与动作，并在完成和取消之间并发提交。 | 运行该文件的竞态用例，确认一个受理、一个终态、一个计数标记。旧许可或越权答复均无法派发。（AC05、AC06、AC07、AC22） | DONE |
+| T222 · 覆盖服务重启与续读 | T207、T208、T209、T211 | `helix_harness/tests/recovery.py`。在恢复脚本添加独立 Coding 数据目录、可控中断点和同次会话的客户端/服务端事件比对。 | 运行恢复脚本，分别核对断线补读、未知结果及压缩后的上下文，旧 RSI 恢复场景仍通过。（AC08、AC09、AC10） | DONE |
+| T223 · 验证 Coding 可独立工作 | T212、T214 | `helix_harness/tests/api_smoke.py`。在无 Benchmark、归档、Mock 服务及评分设施的环境新建并恢复普通会话，另行检查写请求来源。 | Coding 服务可读取未提交文件并在同一会话继续。无效来源被拒。记录会话 ID 和工具结果。（AC05、AC19） | DONE |
+| T224 · 验收真实多轮与恢复 | T204、T207、T211、T214 | `helix_harness/tests/browser.py`。在 browser.py 增加普通会话场景 coding_real，使用真实 Provider 解释失败测试、追问修复、关闭重开再询问。 | 从浏览器取得模型标识、失败与成功的同项测试输出、工具记录和 Git Diff，独立重跑通过。（AC02） | DONE |
+| T225 · 启动长任务并关闭页面 | T203、T207、T218 | `helix_harness/tests/browser.py`。在独立验收仓库增加 coding_long 场景，设超过 30 分钟的预算，启动含静默及长输出的本地任务，切换会话后关闭全部页面。 | 保存服务端开始时间、turn_id 和调用标识。确认浏览器上下文无打开页面，服务端任务仍在推进。（AC13） | DONE |
+| T226 · 重开并验收满 30 分钟 | T225 | `helix_harness/tests/browser.py`。同一场景重开原会话，查看离线期间的进度。实际运行至少 30 分钟后从 Web 取消并核对清理。 | 同一 turn_id 的服务端开始与取消时间差至少 1800 秒，长输出与终态可查，父子进程回收，另一会话可写。（AC07、AC13） | DONE |
+| T227 · 验收第二阶段 | 本阶段全部前项 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/browser.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。核对路径边界、测试凭据、配置与扩展的实测记录，把真实多轮和长任务证据登记到阶段报告。 | AC02、AC07–AC13 及 AC19、AC22–AC25 的 Coding 部分均有操作与结果。真实编程可在原会话继续后开放第三阶段。（AC02、AC07、AC08、AC09、AC10、AC11、AC12、AC13、AC19、AC22、AC23、AC24、AC25） | DONE |
 
 ### 第二阶段交付记录 · 2026-11-24
 
@@ -171,19 +171,19 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 
 | 交付 | 实际改动与复核 |
 | --- | --- |
-| 取消与写入权 | `webdemo/coding/{manager,store,worker,actions}.py` 在一个事务中受理取消、冻结答复并将写入权标为清理中。受管进程通过独立的 macOS 审计会话启动，监督者在服务退出后仍可核实整棵进程树的结束。两个数据库连接竞争终态，延迟清理期间另一会话可读、不能写，另一工作树的写任务继续。 |
-| 重启、续读与压缩 | `webdemo/api.py`、`coding/{routes,runtime_adapter}.py`、`src/lib/coding.ts` 和 `CodingTimeline.tsx` 恢复已提交的事件和待答授权。浏览器经历两次断线、一次应用失败和一次游标重置。服务失联后，计数文件仍只有一条标记。真实原生压缩后重启，摘要和保留细节在模型输入中各出现一次。 |
+| 取消与写入权 | `helix_harness/coding/{manager,store,worker,actions}.py` 在一个事务中受理取消、冻结答复并将写入权标为清理中。受管进程通过独立的 macOS 审计会话启动，监督者在服务退出后仍可核实整棵进程树的结束。两个数据库连接竞争终态，延迟清理期间另一会话可读、不能写，另一工作树的写任务继续。 |
+| 重启、续读与压缩 | `helix_harness/api.py`、`coding/{routes,runtime_adapter}.py`、`src/lib/coding.ts` 和 `CodingTimeline.tsx` 恢复已提交的事件和待答授权。浏览器经历两次断线、一次应用失败和一次游标重置。服务失联后，计数文件仍只有一条标记。真实原生压缩后重启，摘要和保留细节在模型输入中各出现一次。 |
 | Provider 与扩展 | `coding/{models,profiles,mcp_bridge}.py`、`CodingSettings.tsx` 和 `CodingWorkspace.tsx` 接通按轮冻结的模型配置、凭据撤销、Skills、MCP 和命令 Hooks。浏览器能看到实际 MCP 工具名、回执及错误来源。失效凭据产生真实端点的 401。 |
 | 真实编程 | `deepseek-official / deepseek-flash` 在会话 `728c49c9-3591-4676-a3ad-ddd11b0a5359` 中复现、解释和修复加法错误。关闭全部页面并重开后第三轮能回答原实际值 1 和期望值 5。工作树独立重跑通过。[真实模型、退出码及答复](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/real/identity.json>) |
 | 关页长任务 | 会话 `9e42b882-8a07-4b28-946a-48c993e08a1e` 的轮次 `2334bf1f-6146-4f52-afaa-b92cdb3af58a` 从运行到 Web 受理取消经过 **1801.46 秒**。重开后可见离线产生的输出，保留 2097152 字节并标注截断。取消后两个受测进程均已退出，命令临时目录计数为零，另一会话成功写入。[时间线与清理凭据](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/long.json>) |
 | 自动回归 | 21 项 Coding 生命周期用例通过。前端类型检查和生产构建通过。项目原测试 758 项通过、1 项跳过，并报告一个未注册的 pytest timeout 标记。锁定镜像上的既有 RSI 恢复脚本通过，T101 原生会话及历史归档重新比对一致。[Coding 用例](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/lifecycle.txt>) · [原测试输出](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/native.txt>) |
-| 验收入口 | `webdemo/tests/test_coding_lifecycle.py`、`api_smoke.py --coding`、`recovery.py --coding`。浏览器场景包括 `coding_real`、`coding_long`、`coding_stability`、`coding_settings`、`coding_extensions` 和 `coding_provider_error`。这些场景分别建立临时 Git 仓库、状态库与服务。 |
+| 验收入口 | `helix_harness/tests/test_coding_lifecycle.py`、`api_smoke.py --coding`、`recovery.py --coding`。浏览器场景包括 `coding_real`、`coding_long`、`coding_stability`、`coding_settings`、`coding_extensions` 和 `coding_provider_error`。这些场景分别建立临时 Git 仓库、状态库与服务。 |
 
 本机 Shell 监督在 macOS ARM64 登录会话完成验收。首次长任务验收脚本使用了随最后一页关闭的临时浏览器上下文；改为显式上下文后，两次完整运行分别达到 1801.24 秒和 1801.46 秒。第三阶段从 T301 开始交付独立 RSI Center。
 
 ### 第二阶段交付后的 Coding 入口修复
 
-按用户实际操作补验 F2、F9、AC01 和 AC06。普通目录和 Git 工作树共用会话、授权和轮次提交。空白首页使用同一个消息框，支持先选目录或先写首条消息。运行 `.venv/bin/python webdemo/tests/browser.py --phase coding_onboarding`，从空历史验证路径纠错、草稿保留、普通目录写入、回执丢失重试和 Git 双击提交。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/CodingOnboarding/results.json>)
+按用户实际操作补验 F2、F9、AC01 和 AC06。普通目录和 Git 工作树共用会话、授权和轮次提交。空白首页使用同一个消息框，支持先选目录或先写首条消息。运行 `.venv/bin/python helix_harness/tests/browser.py --phase coding_onboarding`，从空历史验证路径纠错、草稿保留、普通目录写入、回执丢失重试和 Git 双击提交。[浏览器结果](</Users/tianmu/Library/Application Support/MewCode/Redesign/CodingOnboarding/results.json>)
 
 ## Phase 3 · 独立 RSI Center
 
@@ -218,7 +218,7 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 | T320 · 展示主动回滚与拒绝 | T314、T319 | `src/pages/Versions.tsx`、`catalog.py`、`src/lib/api.ts`。确认页先展示源版本、目标和策略差异。分别显示主动回滚历史和候选拒绝时保留父版本的记录。 | 用成功和冲突的两次请求刷新版本页，决定数及活动引用与库一致，旧拒绝事件能正确解释。（AC16、AC17） | TODO |
 | T321 · 接入失败分析与策略比较 | T308、T313、T314 | `catalog.py`、`src/pages/Evolution.tsx`。将进化页的启动操作接到实验接口并沿用既有优化器，将失败结论、样本轨迹、优化假设、父子快照差异、逐题成绩与决策报告关联。 | 从一次失败结论定位原运行，再打开父子 Prompt、Skill 或 Workflow 差异并用回执复算成绩。（AC16） | TODO |
 | T322 · 按记录计算历史指标 | T306、T311 | `catalog.py`、`src/pages/Dashboard.tsx`、`src/pages/Evaluations.tsx`。按轮、来源和样本数聚合成功率、Token、耗时、可得费用。无来源的指标标记未记录。 | 各选一组完整与缺项的真实或演示归档，从原回执独立汇总，页面来源、分母、数值及缺失项符合记录。（AC18、AC25） | TODO |
-| T323 · 验收第三阶段 | 本阶段全部前项 | `tests/rsi/test_day4.py`、`webdemo/tests/browser.py`、`src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。补齐 RSI 操作与失败文案，运行独立谱系的接受、拒绝与主动回滚，复查旧归档并登记阶段记录。 | 核对 AC14–AC18 和 AC26 的归档部分。新实验用回滚后的引用，在途实验保存原快照，既有归档按原 ID 可查。（AC14、AC15、AC16、AC17、AC18、AC26） | TODO |
+| T323 · 验收第三阶段 | 本阶段全部前项 | `tests/rsi/test_day4.py`、`helix_harness/tests/browser.py`、`src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。补齐 RSI 操作与失败文案，运行独立谱系的接受、拒绝与主动回滚，复查旧归档并登记阶段记录。 | 核对 AC14–AC18 和 AC26 的归档部分。新实验用回滚后的引用，在途实验保存原快照，既有归档按原 ID 可查。（AC14、AC15、AC16、AC17、AC18、AC26） | TODO |
 
 ## Phase 4 · 两个显式的跨模块入口
 
@@ -243,8 +243,8 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 | T410 · 按配置修订提交绑定 | T409 | `coding/routes.py`、`coding/profiles.py`、`coding/store.py`。实现 POST /api/coding/profiles/{profile_id}/harness，校验配置归属，再按请求 ID 查回执。事务内更新预期修订、快照引用及回执。 | 同一预期修订竞争仅一个成功。丢失应答后重试能读回原修订，坏摘要或旧修订保留原绑定。（AC21、AC22） | TODO |
 | T411 · 从本地绑定启动轮次 | T410 | `coding/profiles.py`、`coding/runtime_adapter.py`。生成 CodingConfigSnapshot 时引用固定策略内容，在该配置下一轮装载本地包。 | 关闭 RSI 后新开指定配置轮次，实际策略与本地摘要匹配，在途轮次及另一配置仍使用各自旧快照。（AC19、AC21） | TODO |
 | T412 · 接入显式选用操作 | T407、T410、T411 | `src/pages/CodingSettings.tsx`、`src/lib/coding.ts`、`src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`。在指定 Coding 配置中显示待选版本、证据与摘要，保存后展示生效修订及下一轮版本。补齐候选与 Harness 的双语反馈。 | 在两个配置之间切换，确认只对选定配置生效。不可验证版本在界面可见原因。（AC21） | TODO |
-| T413 · 验证两侧并发与独立启动 | T406、T408、T412 | `webdemo/tests/test_exchange.py`、`webdemo/tests/browser.py`。并发运行两个普通仓库和一个 RSI 实验，分别取消、独立启动与恢复。再交叉校验候选材料与 Harness。 | 从三组 ID 对照消息、目录、配置、权限与工具结果。取消一个其余仍推进，无普通会话时实验也能完成。（AC19、AC20、AC21） | TODO |
-| T414 · 验收第四阶段 | 本阶段全部前项 | `webdemo/tests/test_exchange.py`、`webdemo/tests/api_smoke.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在两个跨模块入口重送请求，测试私测及凭据标记，收集独立副本、本地绑定及冻结题集的核对结果。 | AC19–AC21 与 AC22–AC24 的跨模块部分均有运行证据。记录候选 ID、清单摘要、指定配置修订和固定 Harness。（AC19、AC20、AC21、AC22、AC23、AC24） | TODO |
+| T413 · 验证两侧并发与独立启动 | T406、T408、T412 | `helix_harness/tests/test_exchange.py`、`helix_harness/tests/browser.py`。并发运行两个普通仓库和一个 RSI 实验，分别取消、独立启动与恢复。再交叉校验候选材料与 Harness。 | 从三组 ID 对照消息、目录、配置、权限与工具结果。取消一个其余仍推进，无普通会话时实验也能完成。（AC19、AC20、AC21） | TODO |
+| T414 · 验收第四阶段 | 本阶段全部前项 | `helix_harness/tests/test_exchange.py`、`helix_harness/tests/api_smoke.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。在两个跨模块入口重送请求，测试私测及凭据标记，收集独立副本、本地绑定及冻结题集的核对结果。 | AC19–AC21 与 AC22–AC24 的跨模块部分均有运行证据。记录候选 ID、清单摘要、指定配置修订和固定 Harness。（AC19、AC20、AC21、AC22、AC23、AC24） | TODO |
 
 ## Phase 5 · 完整回归与最终演示
 
@@ -252,24 +252,24 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T501 · 准备最终回归环境 | T101 | `webdemo/tests/recovery.py`、`webdemo/tests/api_smoke.py`。在独立仓库与服务数据目录准备含已知失败测试的项目、只读归档副本及三种可区分的运行配置，装入 T101 基线。 | 核对目录、端口与基线摘要均指向验收样本，两种产品入口能分别查询。（AC19、AC26） | TODO |
-| T502 · 运行前端构建 | T501 | `frontend/package.json`。在项目根执行 npm --prefix webdemo/frontend run build。 | 类型检查和构建均以零退出，打开构建产物对应的 Coding 与 RSI 路由能加载组件。（AC01、AC14） | TODO |
-| T503 · 运行后端与引擎回归 | T501 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/test_exchange.py`、`tests/rsi/test_day4.py`。运行 `.venv/bin/python -B -m pytest -q tests`，再显式运行两个新增的 Web 单测文件，保存实际结果及跳过原因。 | 会话竞争、版本事务、冻结输入、跨库重试与配置隔离用例均执行通过，所需用例若跳过则补跑并保存结果。（AC06、AC16、AC17、AC22） | TODO |
-| T504 · 运行既有实服务场景 | T501、T502 | `webdemo/tests/api_smoke.py`、`webdemo/tests/browser.py`、`webdemo/tests/recovery.py`。执行 API 冒烟、旧 RSI 浏览器场景、已有真实 RSI 单题场景及恢复脚本，按各自来源保存运行 ID。 | 旧链接可访问原作业，公开示例、评分回执、拒绝历史与中断清理分别能从对应场景复核。（AC14、AC15、AC16、AC18、AC26） | TODO |
-| T505 · 验证六种幂等操作 | T501、T503 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/test_exchange.py`、`webdemo/tests/api_smoke.py`。对提交轮次、权限答复、取消、启动实验、主动回滚、提交候选分别模拟双击和成功应答丢失，再让完成与取消竞争。 | 分别核对一次副作用、原回执及唯一终态，双标签页刷新与持久记录相符。（AC22） | TODO |
-| T506 · 逐入口核对路径范围 | T501 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/test_exchange.py`、`webdemo/tests/api_smoke.py`。在临时目录通过受限链接测试文件浏览、搜索、新建、编辑、删除、Diff、Shell、实验公开轨迹及候选导出。 | 受限标记未被展示或导出，受限目标目录清单与内容摘要相同。同一组正常路径的操作成功。（AC23） | TODO |
-| T507 · 核对凭据传播范围 | T501 | `webdemo/tests/api_smoke.py`、`webdemo/tests/test_exchange.py`、`webdemo/tests/browser.py`。用本地测试 Provider 的可识别凭据各做一次成功和错误调用，查浏览器存储、配置、日志、事件、会话、产物、导出、Shell 与测试进程。 | 仅目标 Provider 确认收到标记，其他检查位置匹配零次。报告只写位置和计数。（AC24） | TODO |
-| T508 · 区分故障并保留证据 | T501、T503 | `webdemo/tests/recovery.py`、`webdemo/tests/browser.py`。依次制造断线、Provider 失败、权限拒绝、命令失败、评分设施不可用及进度保存失败。 | 页面均显示受影响的运行、已有证据和恢复方式。写库失效期间没有新命令，缺失测试、分数、费用如实标出。（AC25） | TODO |
-| T509 · 复核长任务及取消 | T501、T502 | `webdemo/tests/browser.py`、`webdemo/tests/recovery.py`。执行普通会话的 coding_long 场景，将同一轮服务端起止时间、离线输出与子进程退出记录关联。 | 运行实际满 1800 秒，关闭所有页面再打开后可读原进度，从 Web 取消，工作树在清理完成后可接手。（AC07、AC13） | TODO |
+| T501 · 准备最终回归环境 | T101 | `helix_harness/tests/recovery.py`、`helix_harness/tests/api_smoke.py`。在独立仓库与服务数据目录准备含已知失败测试的项目、只读归档副本及三种可区分的运行配置，装入 T101 基线。 | 核对目录、端口与基线摘要均指向验收样本，两种产品入口能分别查询。（AC19、AC26） | TODO |
+| T502 · 运行前端构建 | T501 | `frontend/package.json`。在项目根执行 npm --prefix helix_harness/frontend run build。 | 类型检查和构建均以零退出，打开构建产物对应的 Coding 与 RSI 路由能加载组件。（AC01、AC14） | TODO |
+| T503 · 运行后端与引擎回归 | T501 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`tests/rsi/test_day4.py`。运行 `.venv/bin/python -B -m pytest -q vendor/mewcode-runtime/tests`，再显式运行两个新增的 Web 单测文件，保存实际结果及跳过原因。 | 会话竞争、版本事务、冻结输入、跨库重试与配置隔离用例均执行通过，所需用例若跳过则补跑并保存结果。（AC06、AC16、AC17、AC22） | TODO |
+| T504 · 运行既有实服务场景 | T501、T502 | `helix_harness/tests/api_smoke.py`、`helix_harness/tests/browser.py`、`helix_harness/tests/recovery.py`。执行 API 冒烟、旧 RSI 浏览器场景、已有真实 RSI 单题场景及恢复脚本，按各自来源保存运行 ID。 | 旧链接可访问原作业，公开示例、评分回执、拒绝历史与中断清理分别能从对应场景复核。（AC14、AC15、AC16、AC18、AC26） | TODO |
+| T505 · 验证六种幂等操作 | T501、T503 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`helix_harness/tests/api_smoke.py`。对提交轮次、权限答复、取消、启动实验、主动回滚、提交候选分别模拟双击和成功应答丢失，再让完成与取消竞争。 | 分别核对一次副作用、原回执及唯一终态，双标签页刷新与持久记录相符。（AC22） | TODO |
+| T506 · 逐入口核对路径范围 | T501 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`helix_harness/tests/api_smoke.py`。在临时目录通过受限链接测试文件浏览、搜索、新建、编辑、删除、Diff、Shell、实验公开轨迹及候选导出。 | 受限标记未被展示或导出，受限目标目录清单与内容摘要相同。同一组正常路径的操作成功。（AC23） | TODO |
+| T507 · 核对凭据传播范围 | T501 | `helix_harness/tests/api_smoke.py`、`helix_harness/tests/test_exchange.py`、`helix_harness/tests/browser.py`。用本地测试 Provider 的可识别凭据各做一次成功和错误调用，查浏览器存储、配置、日志、事件、会话、产物、导出、Shell 与测试进程。 | 仅目标 Provider 确认收到标记，其他检查位置匹配零次。报告只写位置和计数。（AC24） | TODO |
+| T508 · 区分故障并保留证据 | T501、T503 | `helix_harness/tests/recovery.py`、`helix_harness/tests/browser.py`。依次制造断线、Provider 失败、权限拒绝、命令失败、评分设施不可用及进度保存失败。 | 页面均显示受影响的运行、已有证据和恢复方式。写库失效期间没有新命令，缺失测试、分数、费用如实标出。（AC25） | TODO |
+| T509 · 复核长任务及取消 | T501、T502 | `helix_harness/tests/browser.py`、`helix_harness/tests/recovery.py`。执行普通会话的 coding_long 场景，将同一轮服务端起止时间、离线输出与子进程退出记录关联。 | 运行实际满 1800 秒，关闭所有页面再打开后可读原进度，从 Web 取消，工作树在清理完成后可接手。（AC07、AC13） | TODO |
 
 ### 原生兼容与跨模块演示
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
 | T510 · 验收 CLI 与 TUI | T501 | `mewcode/__main__.py`、`mewcode/app.py`。从临时项目用 CLI 的 `-p` 与 `--output-format stream-json` 发起真实工具请求，再于 tmux 启动原 TUI，打开升级前可恢复的会话副本并续问。 | 捕获工具实际结果和续聊内容，与 T101 已知事实相符。原生会话路径及格式仍可读取。（AC26） | TODO |
-| T511 · 执行最终演示的 Coding 部分 | T501、T502 | `webdemo/tests/browser.py`。增加并运行同一浏览器演示场景 coding_rsi_roundtrip。先从普通入口使用真实模型完成解释、修复、重跑和保存，保留会话 ID。 | 关闭重开并续问，记录真实模型、配对调用、测试先败后过与 Git Diff。在磁盘上独立重跑成功。（AC02、AC27） | TODO |
-| T512 · 执行最终演示的 RSI 部分 | T511 | `webdemo/tests/browser.py`。在同一演示中进入 RSI，选冻结题集、被测模型及 Harness，启动进化，查看失败轨迹、策略修改、版本分数、回执与决定，再返回原 Coding 会话。 | 实验 ID 能追到评分和版本证据，返回的原会话 ID、目录和配置相同，下一轮仍能引用刚才的修改。（AC16、AC21、AC27） | TODO |
-| T513 · 比对升级前后的历史材料 | T501、T504 | `catalog.py`、`webdemo/tests/recovery.py`。按 T101 保存的原标识逐一打开归档，核对轨迹、回执、策略快照、代码产物、分数、版本关系和真实或演示来源。 | 读前读后的归档清单、逐文件摘要及历史值与基线一致。只读归档无数据库升级或新增文件。（AC18、AC26） | TODO |
+| T511 · 执行最终演示的 Coding 部分 | T501、T502 | `helix_harness/tests/browser.py`。增加并运行同一浏览器演示场景 coding_rsi_roundtrip。先从普通入口使用真实模型完成解释、修复、重跑和保存，保留会话 ID。 | 关闭重开并续问，记录真实模型、配对调用、测试先败后过与 Git Diff。在磁盘上独立重跑成功。（AC02、AC27） | TODO |
+| T512 · 执行最终演示的 RSI 部分 | T511 | `helix_harness/tests/browser.py`。在同一演示中进入 RSI，选冻结题集、被测模型及 Harness，启动进化，查看失败轨迹、策略修改、版本分数、回执与决定，再返回原 Coding 会话。 | 实验 ID 能追到评分和版本证据，返回的原会话 ID、目录和配置相同，下一轮仍能引用刚才的修改。（AC16、AC21、AC27） | TODO |
+| T513 · 比对升级前后的历史材料 | T501、T504 | `catalog.py`、`helix_harness/tests/recovery.py`。按 T101 保存的原标识逐一打开归档，核对轨迹、回执、策略快照、代码产物、分数、版本关系和真实或演示来源。 | 读前读后的归档清单、逐文件摘要及历史值与基线一致。只读归档无数据库升级或新增文件。（AC18、AC26） | TODO |
 | T514 · 汇总五阶段实测结果 | 本阶段全部前项 | `docs/redesign/task.md`、`docs/redesign/checklist.md`。依次核对 AC01–AC27 的同次运行证据以及 F1–F24、N1–N13 映射。记录真实模型、实际执行结果、遗留项及复测结果。 | 每条 AC 有可复核标识与实际通过结论。缺证据或失败项保留状态，处理并复测后才把相应任务标为 DONE。（AC27） | TODO |
 
 ## 验收标准与任务索引

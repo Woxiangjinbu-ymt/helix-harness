@@ -1,0 +1,74 @@
+{
+  "starter_score": 25,
+  "checks": [
+    {
+      "input": {
+        "items": [
+          "b",
+          "c",
+          "a"
+        ]
+      },
+      "expected": {
+        "items": [
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "input": {
+        "items": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "settings": {
+          "page_size": 3
+        }
+      },
+      "expected": {
+        "items": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "input": {
+        "items": [
+          3,
+          2,
+          1
+        ],
+        "settings": {
+          "page_size": 3
+        },
+        "limit": 0
+      },
+      "expected": {
+        "items": []
+      }
+    },
+    {
+      "input": {
+        "items": [
+          1,
+          2,
+          3
+        ],
+        "settings": {
+          "page_size": 0
+        },
+        "limit": 1
+      },
+      "expected": {
+        "items": [
+          1
+        ]
+      }
+    }
+  ]
+}

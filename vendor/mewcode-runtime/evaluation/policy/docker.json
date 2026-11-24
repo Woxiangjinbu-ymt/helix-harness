@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "image": "python@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90",
+  "platform": "linux/arm64",
+  "timeout_seconds": 30,
+  "memory_mb": 128,
+  "pids_limit": 32
+}

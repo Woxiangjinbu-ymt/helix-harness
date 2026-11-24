@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "benchmark": {
+    "benchmark_id": "repo-python-v1",
+    "manifest_digest": "b56b771e09939f7af69510be899aad216fce8a44596921162db45eb3ce735c2f",
+    "cases": [
+      {
+        "case_id": "availability-window",
+        "repo_commit": "dadea612feba57d78bc9ae916f3c5ec0eab57148",
+        "statement_digest": "35509f9c4da5f2dd436efae3884791fe508ce1e55c2786b9a7ff42d619c1a967",
+        "rubric_digest": "62fcb576a47c12b332726329b4ba4b60027e7f9e8be1aa8f78620450998ecca3"
+      },
+      {
+        "case_id": "record-upgrade",
+        "repo_commit": "bb33ab8b370504519a0f98fe8536551d0a0ff23a",
+        "statement_digest": "c814f3b18e4f22ac830a9e879aff363e99eeff9c7c5ae3e3489c9b7ae08dbbb0",
+        "rubric_digest": "559ccadae3efc60d734bd179525399b42c2542fb4abec8f231f999b43c4c71c2"
+      },
+      {
+        "case_id": "page-settings",
+        "repo_commit": "e02440e960c2df00034219568b0abba6010946c4",
+        "statement_digest": "66bfbc341ec8024a5c6b3f6b988ae2c5df6f1e3fe49cf324d1e8f5dbc2c9d165",
+        "rubric_digest": "f97aef96d7bf75e330ff6e4353780e9f7ffc63e24b43138c1670c6cac61d8d0f"
+      }
+    ]
+  },
+  "benchmark_digest": "9958245a5df60d85aff3fb995dc0c1c412aa2587b4bd5198f0d6710b57a0e386",
+  "runtime_digest": "83dbb574b4068c663fbd1b47739c7da9e228bf809586eed168c6ab9a729d5329",
+  "evaluator_digest": "88aac7fe819c2b8183d09649c9825e4780705a16c4028c9a9f6da9737f132205",
+  "policy_digest": "1ae41c836400b4bd695798b7a55156c2bc7cd3f95a5f96d45d79f273a4900662",
+  "initial_strategy_digest": "68ff1fe1354ef889d98be48fc701c742055af92f02ae6102f9b1ca1edfff4af2",
+  "calibration_reference_digests": {
+    "availability-window": "583475488565d9a1ae74a4f2417bdc2dfc1e9bee1e62177bc5940caa8322fb51",
+    "record-upgrade": "bc8feb1af61305cf4037141136afc0cef2499c14badd55555fa07cec5d008496",
+    "page-settings": "2385b3fe9ac99bc7c49008060991a62a27c5325bbbcad3ac03edb520187ecaf6"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "status": "ok",
+  "benchmark": "repo-python-v1",
+  "benchmark_digest": "9958245a5df60d85aff3fb995dc0c1c412aa2587b4bd5198f0d6710b57a0e386",
+  "input_lock_digest": "35d94b1f790f3e079ddc0beb0b658f4da42d1f73ab84118538d8c403a6cbf651",
+  "image": "python@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90",
+  "platform": "linux/arm64",
+  "image_id": "sha256:1c0252262bd9a91b72301c941e478fff5c3dfeb23f146d034d590631cdc75e87",
+  "isolation_probe": "passed",
+  "calibration": {
+    "availability-window": {
+      "repo_commit": "dadea612feba57d78bc9ae916f3c5ec0eab57148",
+      "starter": 25.0,
+      "reference": 100.0,
+      "checks": 4
+    },
+    "record-upgrade": {
+      "repo_commit": "bb33ab8b370504519a0f98fe8536551d0a0ff23a",
+      "starter": 40.0,
+      "reference": 100.0,
+      "checks": 5
+    },
+    "page-settings": {
+      "repo_commit": "e02440e960c2df00034219568b0abba6010946c4",
+      "starter": 25.0,
+      "reference": 100.0,
+      "checks": 4
+    }
+  }
+}
