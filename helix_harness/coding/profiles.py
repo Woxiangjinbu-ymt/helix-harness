@@ -510,6 +510,7 @@ def for_session(store, sid, profile, preferences=None):
         selected = db.execute(
             "SELECT document FROM session_options WHERE session=?", (sid,)
         ).fetchone()
+        bound_harness = store.get_repo_harness(session["worktree_id"], db)
     prefs = {**session.get("composer", {}), **(preferences or {})}
     snap = _profile_snapshot(store, profile)
     model_profile = prefs.get("model_profile_id")
@@ -581,5 +582,13 @@ def for_session(store, sid, profile, preferences=None):
         local_rules_path=root / ".mewcode/permissions.local.yaml",
     )
     material["policy"] = [asdict(rule) for rule in rules.snapshot()]
+    if bound_harness is not None:
+        snap["harness_ref"] = {
+            "repo_id": bound_harness["repo_id"],
+            "version": bound_harness["version"],
+            "revision": bound_harness["revision"],
+            "digest": bound_harness["digest"],
+        }
+        material["harness"] = bound_harness["bundle"]
     snap["bindings"] = save_material(store.root, material)
     return snap

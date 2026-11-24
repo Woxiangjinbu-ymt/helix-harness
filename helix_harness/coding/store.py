@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS permissions(id TEXT PRIMARY KEY, turn TEXT NOT NULL R
  call TEXT NOT NULL, worker TEXT NOT NULL, state TEXT NOT NULL, summary TEXT NOT NULL, answer TEXT);
 CREATE TABLE IF NOT EXISTS actions(id TEXT NOT NULL, turn TEXT NOT NULL REFERENCES turns(id), worker TEXT NOT NULL,
  call TEXT, generation INTEGER, target TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(turn,id));
+CREATE TABLE IF NOT EXISTS repo_harness_bindings(tree TEXT PRIMARY KEY REFERENCES trees(id),
+ repo_id TEXT NOT NULL, version INTEGER NOT NULL, revision INTEGER NOT NULL, digest TEXT NOT NULL,
+ bundle_json TEXT NOT NULL, updated TEXT NOT NULL);
 """
 
 
@@ -161,6 +164,79 @@ class Store:
         if row["hash"] != digest(payload):
             raise Conflict("请求 ID 已用于其他内容")
         return json.loads(row["result"])
+
+    def bind_repo_harness(
+        self,
+        directory,
+        *,
+        repo_id: str,
+        version: int,
+        revision: int,
+        harness_digest: str,
+        bundle: dict,
+    ):
+        """将已验证的仓库级 Harness 本地副本绑定到指定工作树（F24）。"""
+        tree, _ = Worktree.identify(directory)
+        identity = encode(asdict(tree))
+        stamp = now()
+        with self.connection(True) as db:
+            db.execute("INSERT OR IGNORE INTO trees VALUES(?,?)", (uid(), identity))
+            tree_id = db.execute(
+                "SELECT id FROM trees WHERE identity=?", (identity,)
+            ).fetchone()[0]
+            db.execute("INSERT OR IGNORE INTO leases(tree) VALUES(?)", (tree_id,))
+            db.execute(
+                """INSERT OR REPLACE INTO repo_harness_bindings
+                   VALUES(?,?,?,?,?,?,?)""",
+                (
+                    tree_id,
+                    repo_id,
+                    version,
+                    revision,
+                    harness_digest,
+                    encode(bundle),
+                    stamp,
+                ),
+            )
+        return {
+            "worktree_id": tree_id,
+            "repo_id": repo_id,
+            "version": version,
+            "revision": revision,
+            "digest": harness_digest,
+            "updated": stamp,
+        }
+
+    def get_repo_harness(self, tree_id: str, db=None):
+        """读取指定工作树绑定的本地 Harness 副本；未绑定时返回 None。"""
+
+        def _query(conn):
+            row = conn.execute(
+                "SELECT * FROM repo_harness_bindings WHERE tree=?", (tree_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "worktree_id": row["tree"],
+                "repo_id": row["repo_id"],
+                "version": row["version"],
+                "revision": row["revision"],
+                "digest": row["digest"],
+                "bundle": json.loads(row["bundle_json"]),
+                "updated": row["updated"],
+            }
+
+        if db is not None:
+            return _query(db)
+        with self.connection() as conn:
+            return _query(conn)
+
+    def unbind_repo_harness(self, tree_id: str) -> bool:
+        with self.connection(True) as db:
+            cur = db.execute(
+                "DELETE FROM repo_harness_bindings WHERE tree=?", (tree_id,)
+            )
+            return cur.rowcount > 0
 
     def remember(self, db, scope, request, payload, result):
         db.execute(

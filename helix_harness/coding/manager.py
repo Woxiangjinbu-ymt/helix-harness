@@ -348,6 +348,7 @@ class Manager:
                 "history": records,
                 "hooks": definitions,
                 "skills": material["skills"],
+                "harness": material.get("harness"),
                 "policy": job.policy,
                 "instructions": "\n".join(instructions),
             }

@@ -79,8 +79,8 @@ def checker(directory, mode, local_rules, sandbox, policy=None):
 
 
 class RoutedHooks(HookEngine):
-    def __init__(self, definitions, channel):
-        super().__init__(load_hooks(definitions))
+    def __init__(self, definitions, channel, extra_hooks=None):
+        super().__init__(load_hooks(definitions) + list(extra_hooks or ()))
         self.channel = channel
 
     async def invoke(self, hook):
@@ -95,11 +95,22 @@ class RoutedHooks(HookEngine):
         return result
 
     async def _run_single(self, hook, ctx):
+        if hook.action.type == "prompt":
+            await super()._run_single(hook, ctx)
+            return
         await self.invoke(hook)
 
     async def run_pre_tool_hooks(self, ctx):
         for hook in self.find_matching_hooks("pre_tool_use", ctx):
             hook.mark_executed()
+            if hook.action.type == "prompt":
+                msg = ctx.expand(hook.action.message)
+                self._notifications.append(
+                    HookNotification(hook.id, "pre_tool_use", msg, True)
+                )
+                if hook.reject:
+                    return ToolRejectedError(ctx.tool_name, msg, hook.id)
+                continue
             result = await self.invoke(hook)
             if hook.reject or result["is_error"]:
                 return ToolRejectedError(ctx.tool_name, result["output"], hook.id)
@@ -107,11 +118,17 @@ class RoutedHooks(HookEngine):
 
 
 class RoutedTool(Tool):
-    def __init__(self, tool, channel):
+    def __init__(self, tool, channel, overlay=None):
         self.name, self.category = tool.name, tool.category
-        self.description, self.params_model = tool.description, tool.params_model
+        self.params_model = tool.params_model
         self.channel = channel
-        self.schema = tool.get_schema()
+        self.schema = dict(tool.get_schema())
+        overlay_text = (overlay or "").strip()
+        if overlay_text:
+            self.schema["description"] = (
+                f"{self.schema['description']}\n\n[Repository Tool Guidance]\n{overlay_text}"
+            )
+        self.description = self.schema["description"]
 
     def get_schema(self):
         return self.schema
@@ -205,15 +222,41 @@ async def run(data, channel):
 
     from mewcode.context.manager import compute_compact_threshold
 
+    harness = data.get("harness") or {}
+    overlays = harness.get("description_overlays") or {}
+    guidance_hooks = []
+    if harness.get("tool_hooks"):
+        from mewcode.rsi.repo.harness import build_guidance_hooks
+
+        guidance_hooks = build_guidance_hooks(harness["tool_hooks"])
+
     registry = ToolRegistry()
     for cls in (ReadFile, EditFile, WriteFile, Glob, Grep, Bash):
-        registry.register(RoutedTool(cls(), channel))
+        tool_obj = cls()
+        registry.register(RoutedTool(tool_obj, channel, overlay=overlays.get(tool_obj.name)))
     from .mcp_bridge import BoundMCPTool
 
     for schema in data.get("mcp_schemas", []):
         registry.register(RoutedTool(BoundMCPTool(schema), channel))
     private = Path(data["private_dir"])
     (private / "tool-results").mkdir(mode=0o700, parents=True, exist_ok=True)
+    merged_skills = dict(data.get("skills") or {})
+    for s_name, s_item in (harness.get("skills") or {}).items():
+        if isinstance(s_item, dict) and s_item.get("prompt_body"):
+            merged_skills.setdefault(s_name, s_item["prompt_body"])
+        elif isinstance(s_item, str):
+            merged_skills.setdefault(s_name, s_item)
+    instruction_parts = [data["instructions"]]
+    if harness.get("instructions"):
+        instruction_parts.append(harness["instructions"])
+    instruction_parts.extend(
+        f"Skill {name}\n{body}" for name, body in merged_skills.items()
+    )
+    hook_engine = (
+        RoutedHooks(data.get("hooks") or [], channel, extra_hooks=guidance_hooks)
+        if (data.get("hooks") or guidance_hooks)
+        else None
+    )
     agent = WebAgent(
         client=CodingModel(supplied, snap, channel),
         registry=registry,
@@ -221,7 +264,7 @@ async def run(data, channel):
         work_dir=str(directory),
         private_dir=private,
         max_iterations=snap["budget"]["max_iterations"],
-        hook_engine=RoutedHooks(data["hooks"], channel) if data.get("hooks") else None,
+        hook_engine=hook_engine,
         permission_checker=checker(
             data["root"],
             snap["permission_mode"],
@@ -230,15 +273,7 @@ async def run(data, channel):
             data.get("policy"),
         ),
         context_window=snap["context_window"],
-        instructions_content="\n".join(
-            [
-                data["instructions"],
-                *[
-                    f"Skill {name}\n{body}"
-                    for name, body in data.get("skills", {}).items()
-                ],
-            ]
-        ),
+        instructions_content="\n\n".join(p for p in instruction_parts if p),
     )
     agent.session_id = data["session_id"]
     records = [SessionRecord.from_jsonl(x) for x in data["history"]]

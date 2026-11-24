@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import rsi_api
+from . import repo_rsi_api, rsi_api
 from .coding import routes as coding_routes
 
 
@@ -84,3 +84,4 @@ def coding_health():
 
 app.include_router(coding_routes.router)
 app.include_router(rsi_api.router)
+app.include_router(repo_rsi_api.router)
