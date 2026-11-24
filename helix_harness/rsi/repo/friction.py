@@ -75,23 +75,43 @@ def load_turns_from_coding_db(
     try:
         if session_id:
             sessions = conn.execute(
-                "SELECT id, cwd FROM sessions WHERE id=?", (session_id,)
+                """SELECT s.id, s.cwd, t.identity
+                   FROM sessions s LEFT JOIN trees t ON s.tree = t.id
+                   WHERE s.id=?""",
+                (session_id,),
             ).fetchall()
         elif repo_root is not None:
-            target = str(Path(repo_root).expanduser().resolve())
+            target = Path(repo_root).expanduser().resolve()
             all_sessions = conn.execute(
-                "SELECT id, cwd FROM sessions ORDER BY created DESC LIMIT ?",
+                """SELECT s.id, s.cwd, t.identity
+                   FROM sessions s LEFT JOIN trees t ON s.tree = t.id
+                   ORDER BY s.created DESC LIMIT ?""",
                 (limit_sessions * 4,),
             ).fetchall()
-            sessions = [
-                s
-                for s in all_sessions
-                if Path(s["cwd"]).expanduser().resolve() == Path(target)
-                or Path(s["cwd"]).expanduser().resolve().is_relative_to(Path(target))
-            ][:limit_sessions]
+            sessions = []
+            for s in all_sessions:
+                raw_cwd = s["cwd"] or "."
+                if s["identity"]:
+                    try:
+                        tree_root = json.loads(s["identity"]).get("root")
+                    except ValueError:
+                        tree_root = None
+                    resolved = (
+                        (Path(tree_root) / raw_cwd).expanduser().resolve()
+                        if tree_root
+                        else Path(raw_cwd).expanduser().resolve()
+                    )
+                else:
+                    resolved = Path(raw_cwd).expanduser().resolve()
+                if resolved == target or resolved.is_relative_to(target):
+                    sessions.append(s)
+                if len(sessions) >= limit_sessions:
+                    break
         else:
             sessions = conn.execute(
-                "SELECT id, cwd FROM sessions ORDER BY created DESC LIMIT ?",
+                """SELECT s.id, s.cwd, t.identity
+                   FROM sessions s LEFT JOIN trees t ON s.tree = t.id
+                   ORDER BY s.created DESC LIMIT ?""",
                 (limit_sessions,),
             ).fetchall()
 
@@ -386,9 +406,9 @@ async def extract_semantic_frictions(
             if isinstance(ev, TextDelta):
                 chunks.append(ev.text)
     raw = "".join(chunks).strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", raw).strip()
-    data = json.loads(raw)
+    from .optimizer import extract_json_payload
+
+    data = extract_json_payload(raw)
     items = data.get("findings", []) if isinstance(data, dict) else []
     anchor = turns[-1]
     base_commit = next((t.base_commit for t in turns if t.base_commit), "")

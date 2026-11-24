@@ -485,17 +485,29 @@ async def evaluate_rubric(
         }
         conv = ConversationManager()
         conv.add_user_message(json.dumps(payload, ensure_ascii=False))
-        chunks: list[str] = []
-        async with asyncio.timeout(60):
-            async for ev in create_client(judge_provider).stream(
-                conv, system=RUBRIC_JUDGE_SYSTEM, tools=[]
-            ):
-                if isinstance(ev, TextDelta):
-                    chunks.append(ev.text)
-        text = "".join(chunks).strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", text).strip()
-        parsed = json.loads(text)
+        text = ""
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            chunks: list[str] = []
+            try:
+                async with asyncio.timeout(60):
+                    async for ev in create_client(judge_provider).stream(
+                        conv, system=RUBRIC_JUDGE_SYSTEM, tools=[]
+                    ):
+                        if isinstance(ev, TextDelta):
+                            chunks.append(ev.text)
+                text = "".join(chunks).strip()
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+        if last_exc is not None:
+            raise last_exc
+        from .optimizer import extract_json_payload
+
+        parsed = extract_json_payload(text)
         raw_items = parsed.get("items", []) if isinstance(parsed, dict) else []
     else:
         return None, []
@@ -546,6 +558,9 @@ def combine_scores(
     return round(total, 2)
 
 
+_CWD_LOCK = asyncio.Lock()
+
+
 class RepoSuiteEvaluator:
     """在隔离工作树中运行指定版本 Harness 并产出三层客观评测回执。"""
 
@@ -570,10 +585,13 @@ class RepoSuiteEvaluator:
 
     def _build_registry(
         self, harness: RepoHarnessInputs
-    ) -> tuple[ToolRegistry, LoadSkill]:
+    ) -> tuple[ToolRegistry, LoadSkill | None]:
         registry = ToolRegistry()
-        load_skill = LoadSkill()
-        for tool in (ReadFile(), EditFile(), WriteFile(), Glob(), Grep(), Bash(), load_skill):
+        load_skill: LoadSkill | None = LoadSkill() if harness.skills else None
+        tools: list[Any] = [ReadFile(), EditFile(), WriteFile(), Glob(), Grep(), Bash()]
+        if load_skill is not None:
+            tools.append(load_skill)
+        for tool in tools:
             overlay = harness.description_overlays.get(tool.name)
             registry.register(GuidedTool(tool, overlay) if overlay else tool)
         return registry, load_skill
@@ -648,7 +666,7 @@ class RepoSuiteEvaluator:
             context_window=context_window,
             instructions_content=harness.instructions,
         )
-        if harness.skills:
+        if harness.skills and load_skill is not None:
             loader = FrozenSkillLoader(harness.skills)
             load_skill.set_loader(loader)
             load_skill.set_agent(agent)
@@ -658,62 +676,101 @@ class RepoSuiteEvaluator:
 
         conv = ConversationManager()
         conv.add_user_message(case["prompt"])
-        prev_cwd = os.getcwd()
-        os.chdir(workspace)
-        try:
-            async with asyncio.timeout(self.timeout_seconds):
-                async for ev in agent.run(conv):
-                    if isinstance(ev, TextDelta):
-                        assistant_chunks.append(ev.text)
-                    elif isinstance(ev, ToolUseEvent):
-                        args = ev.arguments or {}
-                        events.append(
-                            {
-                                "type": "tool_use",
-                                "tool_id": ev.tool_id,
-                                "tool": ev.tool_name,
-                                "file_path": str(args.get("file_path") or args.get("path") or ""),
-                                "command": str(args.get("command") or ""),
-                            }
+        async with _CWD_LOCK:
+            prev_cwd = os.getcwd()
+            os.chdir(workspace)
+            try:
+                for attempt in range(3):
+                    try:
+                        async with asyncio.timeout(self.timeout_seconds):
+                            async for ev in agent.run(conv):
+                                if isinstance(ev, TextDelta):
+                                    assistant_chunks.append(ev.text)
+                                elif isinstance(ev, ToolUseEvent):
+                                    args = ev.arguments or {}
+                                    events.append(
+                                        {
+                                            "type": "tool_use",
+                                            "tool_id": ev.tool_id,
+                                            "tool": ev.tool_name,
+                                            "file_path": str(args.get("file_path") or args.get("path") or ""),
+                                            "command": str(args.get("command") or ""),
+                                        }
+                                    )
+                                elif isinstance(ev, ToolResultEvent):
+                                    events.append(
+                                        {
+                                            "type": "tool_result",
+                                            "tool_id": ev.tool_id,
+                                            "is_error": ev.is_error,
+                                            "elapsed_ms": round(ev.elapsed * 1000),
+                                            "output_preview": str(ev.output)[:240],
+                                        }
+                                    )
+                                elif isinstance(ev, UsageEvent):
+                                    events.append(
+                                        {
+                                            "type": "usage",
+                                            "input_tokens": ev.input_tokens,
+                                            "output_tokens": ev.output_tokens,
+                                        }
+                                    )
+                                elif isinstance(ev, HookEvent):
+                                    events.append(
+                                        {"type": "hook", "hook_id": ev.hook_id, "output": ev.output[:200]}
+                                    )
+                                elif isinstance(ev, TurnComplete):
+                                    turns = ev.turn
+                                    events.append({"type": "turn_complete", "turn": ev.turn})
+                                elif isinstance(ev, LoopComplete):
+                                    turns = ev.total_turns
+                                    events.append({"type": "loop_complete", "turn": ev.total_turns})
+                                    if ev.total_turns >= self.max_turns:
+                                        terminal = "turn_limit"
+                                elif isinstance(ev, ErrorEvent):
+                                    terminal = "error"
+                                    events.append({"type": "error", "message": ev.message[:300]})
+                        break
+                    except TimeoutError:
+                        terminal = "timed_out"
+                        events.append({"type": "terminal", "status": "timed_out"})
+                        break
+                    except Exception as exc:
+                        msg = str(exc).lower()
+                        transient = any(
+                            k in msg
+                            for k in (
+                                "peer closed",
+                                "incomplete chunked",
+                                "connection",
+                                "reset by peer",
+                                "timeout",
+                                "502",
+                                "503",
+                                "429",
+                            )
                         )
-                    elif isinstance(ev, ToolResultEvent):
-                        events.append(
-                            {
-                                "type": "tool_result",
-                                "tool_id": ev.tool_id,
-                                "is_error": ev.is_error,
-                                "elapsed_ms": round(ev.elapsed * 1000),
-                                "output_preview": str(ev.output)[:240],
-                            }
+                        if not transient or attempt >= 2:
+                            raise
+                        # 瞬态流中断：清空并重建干净工作树与对话后重试
+                        events.clear()
+                        assistant_chunks.clear()
+                        terminal = "completed"
+                        turns = 0
+                        os.chdir(prev_cwd)
+                        shutil.rmtree(workspace, ignore_errors=True)
+                        prepare_isolated_workspace(
+                            repo_root,
+                            case["base_commit"],
+                            workspace,
+                            base_patch=case.get("base_patch", ""),
                         )
-                    elif isinstance(ev, UsageEvent):
-                        events.append(
-                            {
-                                "type": "usage",
-                                "input_tokens": ev.input_tokens,
-                                "output_tokens": ev.output_tokens,
-                            }
-                        )
-                    elif isinstance(ev, HookEvent):
-                        events.append(
-                            {"type": "hook", "hook_id": ev.hook_id, "output": ev.output[:200]}
-                        )
-                    elif isinstance(ev, TurnComplete):
-                        turns = ev.turn
-                        events.append({"type": "turn_complete", "turn": ev.turn})
-                    elif isinstance(ev, LoopComplete):
-                        turns = ev.total_turns
-                        events.append({"type": "loop_complete", "turn": ev.total_turns})
-                        if ev.total_turns >= self.max_turns:
-                            terminal = "turn_limit"
-                    elif isinstance(ev, ErrorEvent):
-                        terminal = "error"
-                        events.append({"type": "error", "message": ev.message[:300]})
-        except TimeoutError:
-            terminal = "timed_out"
-            events.append({"type": "terminal", "status": "timed_out"})
-        finally:
-            os.chdir(prev_cwd)
+                        os.chdir(workspace)
+                        conv = ConversationManager()
+                        conv.add_user_message(case["prompt"])
+                        await asyncio.sleep(2.0 * (attempt + 1))
+            finally:
+                os.chdir(prev_cwd)
 
         events.append({"type": "terminal", "status": terminal})
         trace_file = cell_dir / "events.jsonl"
@@ -722,7 +779,9 @@ class RepoSuiteEvaluator:
             encoding="utf-8",
         )
 
-        checks_score, checks_detail = run_checks(workspace, case.get("checks") or [])
+        checks_score, checks_detail = await asyncio.to_thread(
+            run_checks, workspace, case.get("checks") or []
+        )
         trajectory_score, trajectory_detail = score_trajectory(events, terminal)
         rubric_score, rubric_detail = await evaluate_rubric(
             workspace,

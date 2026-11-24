@@ -120,10 +120,46 @@ def test_web_api_and_coding_f24_harness_binding(tmp_path: Path, monkeypatch):
         assert "暗色金融终端配色" in material["harness"]["instructions"]
         assert material["harness"]["description_overlays"]["Bash"] == "交付前执行 npm run build。"
 
-        # 5. 通过 API 查看仓库列表
+        # 5. 通过 API 查看仓库列表、版本详情/Diff 及可用模型列表
         listed = client.get("/api/repo-rsi/repos")
         assert listed.status_code == 200
         assert listed.json()["repos"][0]["head_version"] == 2
+        assert listed.json()["repos"][0]["coding_binding"]["version"] == 2
+
+        v2 = client.get(f"/api/repo-rsi/repos/{repo_id}/versions/2")
+        assert v2.status_code == 200
+        v2_body = v2.json()
+        assert v2_body["playbook_count"] == 1
+        assert "playbook.yaml" in v2_body["files"]
+        assert "暗色金融终端配色" in v2_body["diff"]
+
+        provs = client.get("/api/repo-rsi/providers")
+        assert provs.status_code == 200
+        assert "providers" in provs.json()
+
+        # 6. 验证从 coding.sqlite 扫描相对 cwd 的会话并自动写入 Friction 与 EIT
+        from helix_harness.coding.store import now as coding_now, uid as coding_uid
+
+        with cstore.connection(True) as db:
+            snap_id = coding_uid()
+            db.execute("INSERT INTO snapshots VALUES(?,?)", (snap_id, json.dumps({})))
+            t1, t2 = coding_uid(), coding_uid()
+            ts = coding_now()
+            db.execute("INSERT INTO turns VALUES(?,?,?,?,?,?,?,?,?)", (t1, sess["session_id"], snap_id, "completed", ts, ts, ts, None, "w1"))
+            db.execute("INSERT INTO turns VALUES(?,?,?,?,?,?,?,?,?)", (t2, sess["session_id"], snap_id, "completed", ts, ts, ts, None, "w2"))
+            cstore.event(db, sess["session_id"], t1, "u1", "user", {"text": "优化前端图表布局"})
+            cstore.event(db, sess["session_id"], t1, "tc1", "tool_call", {"call_id": "c1", "tool": "EditFile", "args": {"file_path": "styles.css"}})
+            cstore.event(db, sess["session_id"], t1, "tr1", "tool_result", {"call_id": "c1", "is_error": False, "output": "ok"})
+            cstore.event(db, sess["session_id"], t2, "u2", "user", {"text": "布局有偏差，不要把指标放侧边栏"})
+
+        scanned = client.post(
+            f"/api/repo-rsi/repos/{repo_id}/friction/scan",
+            json={},
+            headers=headers,
+        )
+        assert scanned.status_code == 200, scanned.text
+        assert scanned.json()["scanned_turns"] == 2
+        assert scanned.json()["frictions_added"] >= 2
 
     coding_routes.store.cache_clear()
     coding_routes.manager.cache_clear()

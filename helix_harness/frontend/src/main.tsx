@@ -11,6 +11,7 @@ import {
   Moon,
   Plus,
   Search,
+  Sparkles,
   Sun,
   Terminal,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { Workspace } from "./pages/Workspace";
 const CodingWorkspace = lazy(() => import("./pages/CodingWorkspace").then(m => ({default:m.CodingWorkspace})));
 import { Evolution } from "./pages/Evolution";
 import { Evaluations } from "./pages/Evaluations";
+import { RepoEvolution } from "./pages/RepoEvolution";
 import { Versions } from "./pages/Versions";
 import type { Repo, Task } from "./types";
 import "./styles/tokens.css";
@@ -61,6 +63,7 @@ function AppShell() {
 
   const links = [
     { id: "overview", name: t.nav.overview, icon: LayoutDashboard },
+    { id: "repo-rsi", name: t.nav.repoRsi, icon: Sparkles },
     { id: "evolution", name: t.nav.evolution, icon: GitBranch },
     { id: "evaluations", name: t.nav.evaluations, icon: FlaskConical },
     { id: "versions", name: t.nav.versions, icon: Layers3 },
@@ -68,6 +71,7 @@ function AppShell() {
 
   const allNavNames: Record<string, string> = {
     overview: t.nav.overview,
+    "repo-rsi": t.nav.repoRsi,
     workspace: t.nav.workspace,
     evolution: t.nav.evolution,
     evaluations: t.nav.evaluations,
@@ -371,6 +375,8 @@ function AppShell() {
         <div className={"content" + (isIDE ? " content-ide" : "")}>
           {activeRoute === "overview" ? (
             <Dashboard />
+          ) : activeRoute === "repo-rsi" ? (
+            <RepoEvolution id={id} />
           ) : activeRoute === "evaluations" ? (
             <Evaluations />
           ) : activeRoute === "versions" ? (

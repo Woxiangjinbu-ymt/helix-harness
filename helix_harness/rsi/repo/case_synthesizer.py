@@ -179,9 +179,9 @@ async def synthesize_case_from_friction(
                 if isinstance(event, TextDelta):
                     chunks.append(event.text)
         raw = "".join(chunks).strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", raw).strip()
-        parsed = json.loads(raw)
+        from .optimizer import extract_json_payload
+
+        parsed = extract_json_payload(raw) or {}
         if not generated_id and parsed.get("case_id"):
             generated_id = str(parsed["case_id"])
         title = str(parsed.get("title") or title)

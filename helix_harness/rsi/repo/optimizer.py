@@ -241,6 +241,12 @@ HYBRID_OPTIMIZER_SYSTEM = """你是仓库级自进化引擎的融合优化器（
 3. 当某个领域（如前端股票行情布局/图表规范）需要成体系 SOP 时，在 `skills/<name>/SKILL.md` 新增或更新 inline Skill，并在 `workflow.yaml` 中引用。
 4. 严格遵守 `edit_budget` 上限，禁止写入具体评测 case_id 或测试断言硬编码。
 5. 若此前某方向被拒（见 history 与 critic_feedback），不要原样重复。
+6. 请保持推理简明扼要，直接输出结构清晰的 JSON 提案，避免冗长推演导致输出截断。
+
+策略文件严格格式约定（违反将无法通过装配校验）：
+- `skills/<name>/SKILL.md`：必须以 `---` YAML frontmatter 开头，仅允许 `name`（须与目录名一致）、`description`、`mode: inline` 字段，随后为空行与 Markdown 指导正文。
+- `workflow.yaml`：顶层仅允许 `stages` 列表；每项要么是英文小写短横线阶段名字符串，要么是**仅含 `name` 与 `skills` 两个键**的对象（禁止添加 description 等额外键），且 `skills` 引用的名称须存在于 `skills/` 目录。
+- `tool_guidance.yaml`：顶层仅允许 `version: 1`、`description_overlays`（键限 `ReadFile`/`EditFile`/`WriteFile`/`Glob`/`Grep`/`Bash`/`LoadSkill`）、`tool_hooks`（每项仅允许 `id`/`event`(`pre_tool_use`|`post_tool_use`)/`tool`/`file_glob`/`command_regex`/`reject`/`once`/`message`；`reject: true` 仅用于 `pre_tool_use`）。
 
 返回单一严格 JSON 对象（禁止 Markdown 围栏），若确实没有可改进项返回 null：
 {
@@ -294,6 +300,26 @@ def materialize_proposal_edits(
     return tuple(Edit(path=p, content=c) for p, c in edits_by_path.items())
 
 
+def extract_json_payload(raw: str) -> Any:
+    """容错解析模型输出的 JSON（兼容 Markdown 代码围栏与前后简短说明文字）。"""
+    text = (raw or "").strip()
+    if not text or text == "null":
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text).strip()
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    # 尝试提取第一个完整的大括号 JSON 对象
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        return json.loads(text[start : end + 1])
+    raise ValueError("响应中未找到合法 JSON 对象")
+
+
 class RepoHybridOptimizer:
     """实现 StrategyOptimizer 协议的仓库级融合优化器（支持 hybrid / ace / skilladam 模式）。"""
 
@@ -312,26 +338,50 @@ class RepoHybridOptimizer:
         system = f"{HYBRID_OPTIMIZER_SYSTEM}\n\n{mode_note}"
         conv = ConversationManager()
         conv.add_user_message(json.dumps(public, ensure_ascii=False))
-        chunks: list[str] = []
-        size = 0
-        async with asyncio.timeout(90):
-            async for ev in create_client(self.provider).stream(
-                conv, system=system, tools=[]
-            ):
-                if isinstance(ev, (ToolCallStart, ToolCallComplete)):
-                    raise InvalidProposal("提案模型不能调用工具")
-                if isinstance(ev, TextDelta):
-                    size += len(ev.text.encode("utf-8"))
-                    if size > 96 * 1024:
-                        raise InvalidProposal("提案响应超出大小预算")
-                    chunks.append(ev.text)
-        raw = "".join(chunks).strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", raw).strip()
-        if raw == "null" or not raw:
+        raw = ""
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            chunks: list[str] = []
+            size = 0
+            try:
+                client = create_client(self.provider)
+                if hasattr(client, "set_max_output_tokens"):
+                    base_max = (
+                        self.provider.get_max_output_tokens()
+                        if hasattr(self.provider, "get_max_output_tokens")
+                        else 8192
+                    )
+                    client.set_max_output_tokens(max(16384, int(base_max or 8192)))
+                async with asyncio.timeout(120):
+                    async for ev in client.stream(
+                        conv, system=system, tools=[]
+                    ):
+                        if isinstance(ev, (ToolCallStart, ToolCallComplete)):
+                            raise InvalidProposal("提案模型不能调用工具")
+                        if isinstance(ev, TextDelta):
+                            size += len(ev.text.encode("utf-8"))
+                            if size > 96 * 1024:
+                                raise InvalidProposal("提案响应超出大小预算")
+                            chunks.append(ev.text)
+                raw = "".join(chunks).strip()
+                if not raw:
+                    raise RuntimeError("empty_optimizer_output")
+                last_exc = None
+                break
+            except InvalidProposal:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+        if last_exc is not None:
+            if str(last_exc) == "empty_optimizer_output":
+                raise InvalidProposal("提案模型输出为空（可能被推理长度截断）")
+            raise last_exc
+        if raw == "null":
             return None
         try:
-            parsed = json.loads(raw)
+            parsed = extract_json_payload(raw)
         except ValueError as exc:
             raise InvalidProposal(f"提案模型未返回合法 JSON：{exc}") from exc
         if parsed is None:

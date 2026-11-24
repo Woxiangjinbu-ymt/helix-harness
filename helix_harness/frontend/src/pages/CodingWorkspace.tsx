@@ -11,6 +11,7 @@ import {
   Moon,
   Plus,
   Settings,
+  Sparkles,
   Sun,
   Terminal,
   Wrench,
@@ -415,6 +416,10 @@ export function CodingWorkspace({
           <a href={"#coding-settings" + (id ? "/" + id : "")}>
             <Settings size={15} />
             {c.settings}
+          </a>
+          <a href="#repo-rsi">
+            <Sparkles size={15} />
+            {t.nav.repoRsi}
           </a>
           <a href="#overview">
             <FlaskConical size={15} />

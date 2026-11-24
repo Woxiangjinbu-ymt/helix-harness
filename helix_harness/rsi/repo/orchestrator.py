@@ -197,10 +197,11 @@ class RepoRSIOrchestrator:
                 },
             )
 
-            # 2. 提案 + 前置 Critic 门控（允许被拒后带反对理由有界重修 1 次）
+            # 2. 提案 + 前置 Critic 与装配校验门控（允许被拒后带反对理由有界重修 1 次）
             proposal: dict[str, Any] | None = None
             edits = ()
             verdict = None
+            cand_digest: str | None = None
             critic_rejected = False
             for attempt_idx in range(2):
                 try:
@@ -234,6 +235,7 @@ class RepoRSIOrchestrator:
                 except (InvalidProposal, ValueError) as exc:
                     if attempt_idx == 0:
                         public_payload["critic_feedback"] = [f"格式/合并失败：{exc}"]
+                        notify("critic_retry", {"round": r_idx, "reasons": [str(exc)]})
                         continue
                     history.append(
                         {
@@ -252,41 +254,48 @@ class RepoRSIOrchestrator:
                     edit_budget=edit_budget,
                     mode=self.mode,
                 )
-                if verdict.accepted:
-                    break
-                if attempt_idx == 0:
-                    public_payload["critic_feedback"] = list(verdict.reasons)
-                    notify("critic_retry", {"round": r_idx, "reasons": list(verdict.reasons)})
-                else:
+                if not verdict.accepted:
+                    if attempt_idx == 0:
+                        public_payload["critic_feedback"] = list(verdict.reasons)
+                        notify("critic_retry", {"round": r_idx, "reasons": list(verdict.reasons)})
+                        continue
                     critic_rejected = True
+                    break
+
+                # 装配并封存快照（若 YAML/Skill 装配校验失败同样给予 1 次有界修复机会）
+                try:
+                    cand_digest = self.store.snapshots.seal_edits(head.digest, edits)
+                    break
+                except InvalidProposal as exc:
+                    if attempt_idx == 0:
+                        public_payload["critic_feedback"] = [str(exc)]
+                        notify("critic_retry", {"round": r_idx, "reasons": [str(exc)]})
+                        continue
+                    history.append(
+                        {
+                            "round": r_idx,
+                            "decision": "invalid_proposal",
+                            "hypothesis": proposal.get("hypothesis", ""),
+                            "critic": {"verdict": "reject", "reasons": [str(exc)]},
+                        }
+                    )
+                    critic_rejected = True
+                    break
 
             if proposal is None and not critic_rejected:
                 break
-            if critic_rejected or verdict is None or not verdict.accepted:
-                verdict_dict = verdict.to_dict() if verdict else {"verdict": "reject", "reasons": ["invalid_proposal"]}
-                history.append(
-                    {
-                        "round": r_idx,
-                        "decision": "critic_rejected",
-                        "hypothesis": (proposal or {}).get("hypothesis", ""),
-                        "critic": verdict_dict,
-                    }
-                )
-                notify("critic_rejected", {"round": r_idx, "critic": verdict_dict})
-                continue
-
-            # 3. 封存候选快照
-            try:
-                cand_digest = self.store.snapshots.seal_edits(head.digest, edits)
-            except InvalidProposal as exc:
-                history.append(
-                    {
-                        "round": r_idx,
-                        "decision": "invalid_proposal",
-                        "hypothesis": proposal.get("hypothesis", ""),
-                        "critic": {"verdict": "reject", "reasons": [str(exc)]},
-                    }
-                )
+            if critic_rejected or verdict is None or not verdict.accepted or cand_digest is None:
+                if not history or history[-1].get("round") != r_idx:
+                    verdict_dict = verdict.to_dict() if verdict else {"verdict": "reject", "reasons": ["invalid_proposal"]}
+                    history.append(
+                        {
+                            "round": r_idx,
+                            "decision": "critic_rejected",
+                            "hypothesis": (proposal or {}).get("hypothesis", ""),
+                            "critic": verdict_dict,
+                        }
+                    )
+                    notify("critic_rejected", {"round": r_idx, "critic": verdict_dict})
                 continue
 
             # 4. 隔离 Worktree 跑全量仓库回归集
