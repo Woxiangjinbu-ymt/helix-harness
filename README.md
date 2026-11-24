@@ -21,10 +21,10 @@ Coding 首页提供本地演示模型。使用真实模型时，可在 Coding �
 | --- | --- |
 | [helix_harness](helix_harness/) | 产品 API、Coding 会话管理、工具授权、RSI 编排适配及后台工作进程 |
 | [helix_harness/frontend](helix_harness/frontend/) | Coding 与 RSI 前端，通过 npm 引入锁定版本的 Penguin UI |
-| [vendor/mewcode-runtime](vendor/mewcode-runtime/) | 随仓库保存的 MewCode Python 运行时、冻结评测和原生回归测试，保留原目录结构和来源标注 |
+| [vendor/rsi](vendor/rsi/) | 核心 Agent 运行时、单仓库自进化（Per-Repo RSI）引擎、冻结评测与回归测试 |
 | [docs/redesign](docs/redesign/) | 产品规格、设计、任务和历史验收记录 |
 
-仓库内的相对路径依赖由 uv 和 npm 锁文件管理。检出本项目即可开发。更新运行时须重新验证冻结评测，依赖来源见[说明](vendor/mewcode-runtime/README.md)。
+仓库内的相对路径依赖由 uv 和 npm 锁文件管理。检出本项目即可开发。更新运行时须重新验证冻结评测，依赖来源见[说明](vendor/rsi/README.md)。
 
 ## 验证
 

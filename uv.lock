@@ -370,7 +370,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.165.0" },
-    { name = "mewcode", editable = "vendor/mewcode-runtime" },
+    { name = "mewcode", editable = "vendor/rsi" },
     { name = "pillow", specifier = ">=11" },
     { name = "uvicorn", specifier = "==0.46.0" },
 ]
@@ -681,7 +681,7 @@ wheels = [
 [[package]]
 name = "mewcode"
 version = "0.2.0"
-source = { editable = "vendor/mewcode-runtime" }
+source = { editable = "vendor/rsi" }
 dependencies = [
     { name = "anthropic" },
     { name = "httpx", extra = ["socks"] },

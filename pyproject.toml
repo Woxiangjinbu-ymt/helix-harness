@@ -1,7 +1,7 @@
 [project]
 name = "helix-harness"
 version = "1.0.0"
-description = "Local Coding Workspace and RSI Center built on the MewCode runtime"
+description = "Local Coding Workspace and Self-Improving RSI Center"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,13 +15,13 @@ dependencies = [
 helix-harness = "helix_harness.__main__:main"
 
 [tool.uv.sources]
-mewcode = { path = "vendor/mewcode-runtime", editable = true }
+mewcode = { path = "vendor/rsi", editable = true }
 
 [dependency-groups]
 dev = ["pytest>=9.0.3", "pytest-asyncio>=1.3.0", "playwright==1.65.2", "httpx==0.28.1"]
 
 [tool.pytest.ini_options]
-testpaths = ["helix_harness/tests", "vendor/mewcode-runtime/tests"]
+testpaths = ["helix_harness/tests", "vendor/rsi/tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["helix_harness"]

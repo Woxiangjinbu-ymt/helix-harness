@@ -1,2 +1,2 @@
 # The evaluator hashes the original upstream file bytes across checkouts.
-vendor/mewcode-runtime/** -text
+vendor/rsi/** -text

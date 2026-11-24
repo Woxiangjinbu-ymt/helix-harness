@@ -44,9 +44,9 @@ T101 先建立升级前对照，第一阶段其他任务均以此为前置。此
 ## 测试入口
 
 - Coding 存储、进程、权限与恢复的小改动用临时 Git 仓库和独立数据库复核，通过 `.venv/bin/python -B -m pytest -q helix_harness/tests/test_coding_lifecycle.py` 运行。跨模块用例对应 `helix_harness/tests/test_exchange.py`，版本事务用例对应 `tests/rsi/test_day4.py`，可以按 pytest 节点 ID 单独执行。HTTP 路由装配前直接测试其处理函数，接通后再验证相同输入的 HTTP 结果。每项的测试列给出输入或操作和可判定的结果。
-- 前端使用 `npm --prefix helix_harness/frontend run build`。从项目根按 [Web 服务与测试说明](../../helix_harness/README.md) 启动独立验收实例，执行 `.venv/bin/python helix_harness/tests/api_smoke.py` 和 `.venv/bin/python helix_harness/tests/recovery.py`。原生及 RSI 全量回归用 `.venv/bin/python -B -m pytest -q vendor/mewcode-runtime/tests`。
+- 前端使用 `npm --prefix helix_harness/frontend run build`。从项目根按 [Web 服务与测试说明](../../helix_harness/README.md) 启动独立验收实例，执行 `.venv/bin/python helix_harness/tests/api_smoke.py` 和 `.venv/bin/python helix_harness/tests/recovery.py`。原生及 RSI 全量回归用 `.venv/bin/python -B -m pytest -q vendor/rsi/tests`。
 - 浏览器用 `.venv/bin/python helix_harness/tests/browser.py --phase <场景名>`。保留已有 `dashboard,coding,evolve,history,cancellation,registered` 和 RSI 的 `real` 场景。T224、T225–T226 与 T511–T512 分别交付 `coding_real`、`coding_long` 和 `coding_rsi_roundtrip`。真实模型验收使用服务端实际配置的 Provider，记录模型身份和运行 ID。受控的竞态、错误和版本决策样例记录其演示来源。
-- 每次验证使用该行指定的业务入口。数据库断写、服务中断、链接指向范围外和回滚并发等故障注入均使用验收副本。用 [项目测试约定](../../vendor/mewcode-runtime/AGENT.md) 中的 tmux 流程核对真实 TUI 会话。
+- 每次验证使用该行指定的业务入口。数据库断写、服务中断、链接指向范围外和回滚并发等故障注入均使用验收副本。用 [项目测试约定](../../vendor/rsi/AGENT.md) 中的 tmux 流程核对真实 TUI 会话。
 
 ## Phase 1 · Coding 核心体验
 
@@ -254,7 +254,7 @@ T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服�
 | --- | --- | --- | --- | --- |
 | T501 · 准备最终回归环境 | T101 | `helix_harness/tests/recovery.py`、`helix_harness/tests/api_smoke.py`。在独立仓库与服务数据目录准备含已知失败测试的项目、只读归档副本及三种可区分的运行配置，装入 T101 基线。 | 核对目录、端口与基线摘要均指向验收样本，两种产品入口能分别查询。（AC19、AC26） | TODO |
 | T502 · 运行前端构建 | T501 | `frontend/package.json`。在项目根执行 npm --prefix helix_harness/frontend run build。 | 类型检查和构建均以零退出，打开构建产物对应的 Coding 与 RSI 路由能加载组件。（AC01、AC14） | TODO |
-| T503 · 运行后端与引擎回归 | T501 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`tests/rsi/test_day4.py`。运行 `.venv/bin/python -B -m pytest -q vendor/mewcode-runtime/tests`，再显式运行两个新增的 Web 单测文件，保存实际结果及跳过原因。 | 会话竞争、版本事务、冻结输入、跨库重试与配置隔离用例均执行通过，所需用例若跳过则补跑并保存结果。（AC06、AC16、AC17、AC22） | TODO |
+| T503 · 运行后端与引擎回归 | T501 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`tests/rsi/test_day4.py`。运行 `.venv/bin/python -B -m pytest -q vendor/rsi/tests`，再显式运行两个新增的 Web 单测文件，保存实际结果及跳过原因。 | 会话竞争、版本事务、冻结输入、跨库重试与配置隔离用例均执行通过，所需用例若跳过则补跑并保存结果。（AC06、AC16、AC17、AC22） | TODO |
 | T504 · 运行既有实服务场景 | T501、T502 | `helix_harness/tests/api_smoke.py`、`helix_harness/tests/browser.py`、`helix_harness/tests/recovery.py`。执行 API 冒烟、旧 RSI 浏览器场景、已有真实 RSI 单题场景及恢复脚本，按各自来源保存运行 ID。 | 旧链接可访问原作业，公开示例、评分回执、拒绝历史与中断清理分别能从对应场景复核。（AC14、AC15、AC16、AC18、AC26） | TODO |
 | T505 · 验证六种幂等操作 | T501、T503 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`helix_harness/tests/api_smoke.py`。对提交轮次、权限答复、取消、启动实验、主动回滚、提交候选分别模拟双击和成功应答丢失，再让完成与取消竞争。 | 分别核对一次副作用、原回执及唯一终态，双标签页刷新与持久记录相符。（AC22） | TODO |
 | T506 · 逐入口核对路径范围 | T501 | `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py`、`helix_harness/tests/api_smoke.py`。在临时目录通过受限链接测试文件浏览、搜索、新建、编辑、删除、Diff、Shell、实验公开轨迹及候选导出。 | 受限标记未被展示或导出，受限目标目录清单与内容摘要相同。同一组正常路径的操作成功。（AC23） | TODO |

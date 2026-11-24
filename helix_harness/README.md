@@ -156,7 +156,7 @@ helix_harness/demo-repository.sh
 .venv/bin/python helix_harness/tests/api_smoke.py
 .venv/bin/python helix_harness/tests/browser.py --phase dashboard,coding,evolve,history,cancellation,registered
 .venv/bin/python helix_harness/tests/recovery.py
-.venv/bin/python -B -m pytest -q vendor/mewcode-runtime/tests
+.venv/bin/python -B -m pytest -q vendor/rsi/tests
 ```
 
 真实模型浏览器验收为显式选项。将名称设为本机已配置的 Provider 后执行。
