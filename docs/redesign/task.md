@@ -127,43 +127,59 @@ T101–T138 已完成。默认入口可以在本机 Git 工作目录创建普通
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T201 · 受理取消 | 阶段入口 | `coding/manager.py`、`coding/routes.py`、`coding/store.py`。实现 cancel 的条件更新，把 cancelling、未答授权失效、停止新派发和请求回执放入同一事务。 | 重复取消返回同一回执。用两个连接竞争完成和取消，只出现一条允许的状态路径。（AC07、AC22） | TODO |
-| T202 · 停止所属轮次 | T201 | `coding/worker.py`、`coding/runtime_adapter.py`。处理 stop_turn，分别撤销未启动调度、丢弃未消费许可、结束授权等待、停止原生循环及本轮子进程。 | 在接手前、等待答复和写命令执行中分别取消，旧 Future 失效，另一会话的命令仍运行。（AC07、AC19） | TODO |
-| T203 · 核实延迟清理 | T202 | `coding/worker.py`、`coding/manager.py`。超时后将占用标为 draining，记录阻塞原因。适配器无应答时由管理器终止所属执行，按进程启动身份复查。 | 让临时写进程延迟退出，仍可读、无法接手写入。核对后代消失后才发布 cancelled 并可重新取得写入权。（AC07、AC13） | TODO |
-| T204 · 在会话中取消与继续 | T201、T203 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/components/CodingTimeline.tsx`。将取消按钮绑定到会话和轮次，显示取消中、阻塞原因与最终状态，保留原 Diff 与后续输入。 | 两标签页分别取消、刷新，终态一致。重开可查看保留的文件修改并在同一会话提交下一轮。（AC07、AC22） | TODO |
-| T205 · 生成一致的恢复视图 | 阶段入口 | `coding/store.py`、`coding/routes.py`。在一次读事务中取得消息、工具、待授权、状态与 through_seq，订阅从该序号后读取。 | 在取得视图与订阅之间提交一个事件，客户端补读到一次，视图中已有的最后事件没有重现。（AC08） | TODO |
-| T206 · 验证 SSE 游标 | T205 | `coding/routes.py`。按会话解析 Last-Event-ID 与 after，前者优先。非法、超前或过期位置发 reset_required，心跳不占序号。 | 逐项提交上述游标，检查补发范围与重置响应。一轮结束后原连接仍能收到下一轮。（AC08） | TODO |
-| T207 · 在客户端恢复订阅 | T206 | `src/lib/coding.ts`、`src/pages/CodingWorkspace.tsx`。保留断线前显示的记录，仅在成功应用事件后更新游标。重置时读取 /view 再续订。 | 在含工具与授权的轮次断线两次，覆盖离线完成及应用失败。最终逐项对齐服务端顺序、数量及磁盘计数。（AC08） | TODO |
-| T208 · 恢复失联的轮次 | T203、T205 | `coding/manager.py`、`coding/store.py`、`coding/worker.py`。启动时核对活动实例与进程身份，失联轮次提交 interrupted，使旧授权失效，并继续监管其 draining 记录。 | 结束临时服务并重启，已完成的对照轮次保持原终态，失联轮次显示中断，残余可写进程退出后才可交接。（AC07、AC10） | TODO |
-| T209 · 呈现未确认的动作结果 | T208 | `coding/manager.py`、`src/components/CodingTimeline.tsx`。从已保存的意图和回执识别执行结果未知的调用，链接当前 Diff。恢复历史时仅还原证据。 | 在写入一次计数标记后、保存结果前中断，反复恢复仍仅一条磁盘标记，可由用户新开一轮。（AC10） | TODO |
-| T210 · 持久化压缩边界 | 阶段入口 | `coding/runtime_adapter.py`、`coding/store.py`。通过 append_event 保存原生消息定稿、压缩摘要、保留范围与后续记录。时间线保留早期事件。 | 触发一次实际原生压缩，重开只读视图能看到早期工具事件、压缩通知及对应边界。（AC09） | TODO |
-| T211 · 按最后边界重建模型输入 | T210、T208 | `coding/runtime_adapter.py`、`coding/worker.py`。按原生恢复规则装配摘要、保留的近期消息和之后的新消息，空闲进程释放后从相同记录重建。 | 重启后用含已知标记的对话追问，检查捕获的模型输入及回答，摘要与近期详情各一次。（AC09） | TODO |
+| T201 · 受理取消 | 阶段入口 | `coding/manager.py`、`coding/routes.py`、`coding/store.py`。实现 cancel 的条件更新，把 cancelling、未答授权失效、停止新派发和请求回执放入同一事务。 | 重复取消返回同一回执。用两个连接竞争完成和取消，只出现一条允许的状态路径。（AC07、AC22） | DONE |
+| T202 · 停止所属轮次 | T201 | `coding/worker.py`、`coding/runtime_adapter.py`。处理 stop_turn，分别撤销未启动调度、丢弃未消费许可、结束授权等待、停止原生循环及本轮子进程。 | 在接手前、等待答复和写命令执行中分别取消，旧 Future 失效，另一会话的命令仍运行。（AC07、AC19） | DONE |
+| T203 · 核实延迟清理 | T202 | `coding/worker.py`、`coding/manager.py`。超时后将占用标为 draining，记录阻塞原因。适配器无应答时由管理器终止所属执行，按进程启动身份复查。 | 让临时写进程延迟退出，仍可读、无法接手写入。核对后代消失后才发布 cancelled 并可重新取得写入权。（AC07、AC13） | DONE |
+| T204 · 在会话中取消与继续 | T201、T203 | `src/pages/CodingWorkspace.tsx`、`src/lib/coding.ts`、`src/components/CodingTimeline.tsx`。将取消按钮绑定到会话和轮次，显示取消中、阻塞原因与最终状态，保留原 Diff 与后续输入。 | 两标签页分别取消、刷新，终态一致。重开可查看保留的文件修改并在同一会话提交下一轮。（AC07、AC22） | DONE |
+| T205 · 生成一致的恢复视图 | 阶段入口 | `coding/store.py`、`coding/routes.py`。在一次读事务中取得消息、工具、待授权、状态与 through_seq，订阅从该序号后读取。 | 在取得视图与订阅之间提交一个事件，客户端补读到一次，视图中已有的最后事件没有重现。（AC08） | DONE |
+| T206 · 验证 SSE 游标 | T205 | `coding/routes.py`。按会话解析 Last-Event-ID 与 after，前者优先。非法、超前或过期位置发 reset_required，心跳不占序号。 | 逐项提交上述游标，检查补发范围与重置响应。一轮结束后原连接仍能收到下一轮。（AC08） | DONE |
+| T207 · 在客户端恢复订阅 | T206 | `src/lib/coding.ts`、`src/pages/CodingWorkspace.tsx`。保留断线前显示的记录，仅在成功应用事件后更新游标。重置时读取 /view 再续订。 | 在含工具与授权的轮次断线两次，覆盖离线完成及应用失败。最终逐项对齐服务端顺序、数量及磁盘计数。（AC08） | DONE |
+| T208 · 恢复失联的轮次 | T203、T205 | `coding/manager.py`、`coding/store.py`、`coding/worker.py`。启动时核对活动实例与进程身份，失联轮次提交 interrupted，使旧授权失效，并继续监管其 draining 记录。 | 结束临时服务并重启，已完成的对照轮次保持原终态，失联轮次显示中断，残余可写进程退出后才可交接。（AC07、AC10） | DONE |
+| T209 · 呈现未确认的动作结果 | T208 | `coding/manager.py`、`src/components/CodingTimeline.tsx`。从已保存的意图和回执识别执行结果未知的调用，链接当前 Diff。恢复历史时仅还原证据。 | 在写入一次计数标记后、保存结果前中断，反复恢复仍仅一条磁盘标记，可由用户新开一轮。（AC10） | DONE |
+| T210 · 持久化压缩边界 | 阶段入口 | `coding/runtime_adapter.py`、`coding/store.py`。通过 append_event 保存原生消息定稿、压缩摘要、保留范围与后续记录。时间线保留早期事件。 | 触发一次实际原生压缩，重开只读视图能看到早期工具事件、压缩通知及对应边界。（AC09） | DONE |
+| T211 · 按最后边界重建模型输入 | T210、T208 | `coding/runtime_adapter.py`、`coding/worker.py`。按原生恢复规则装配摘要、保留的近期消息和之后的新消息，空闲进程释放后从相同记录重建。 | 重启后用含已知标记的对话追问，检查捕获的模型输入及回答，摘要与近期详情各一次。（AC09） | DONE |
 
 ### 设置、扩展与故障反馈
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T212 · 持久化 Provider 配置 | 阶段入口 | `coding/profiles.py`、`providers.py`、`coding/routes.py`。提供 Web 配置读写，服务端保存或引用版本化凭据，仅返回掩码和非秘密配置。 | 通过 API 保存两份配置，重读及失败响应中凭据标记均为零，所选测试 Provider 收到正确凭据。（AC11、AC24） | TODO |
-| T213 · 按轮生效与立即撤权 | T212 | `coding/profiles.py`、`coding/manager.py`、`coding/runtime_adapter.py`。提交时固定端点、模型、预算、权限和扩展版本。派发前检查凭据是否已撤销及当前强制拒绝。 | 在一轮中改模型，本轮实际请求与下一轮分属两个快照。撤销凭据后相应调用报告错误。（AC11、AC24、AC25） | TODO |
-| T214 · 接入设置页 | T212、T213 | `src/pages/CodingSettings.tsx`、`src/lib/coding.ts`、`src/main.tsx`、`providers.py`、`mock.py`。选择受支持 Provider、模型和显式的演示来源，显示掩码、配置版本与连接错误。 | 用两份配置发起请求。真实配置错误可定位到原模型，演示来源有标识，旧轮次仍显示原模型。（AC11、AC25） | TODO |
-| T215 · 加载会话 Skill | T213 | `coding/profiles.py`、`coding/routes.py`、`coding/runtime_adapter.py`、`src/pages/CodingSettings.tsx`。列出可用 Skill，保存 Web 选择，通过原生加载器将所选版本装入对应会话并回报失败原因。 | 加载带识别行为的 Skill 并调用。另一配置无该行为，损坏的 Skill 显示加载原因。（AC12） | TODO |
-| T216 · 管理 MCP 连接 | T213 | `coding/runtime_adapter.py`、`coding/routes.py`、`src/pages/CodingSettings.tsx`。复用原生 MCP 管理器，显示连接、断开及已启用工具。把工具调用关联到本会话的动作许可。 | 连接本地测试服务，调用返回独有标记。断开后工具不可用，连接失败能在设置中定位。（AC12） | TODO |
-| T217 · 记录 Hook 的执行结果 | T213 | `coding/runtime_adapter.py`、`src/components/CodingTimeline.tsx`、`src/pages/CodingSettings.tsx`。装载已选 Hooks 的固定配置，展示适用的扩展、Hook 来源及 Runtime 提供的结果。 | 让两会话使用不同 Hook，只有目标会话收到标记事件，写动作可追到本次许可。（AC12、AC19） | TODO |
-| T218 · 保存长输出与任务进度 | 阶段入口 | `coding/actions.py`、`coding/store.py`、`src/components/CodingTimeline.tsx`。将有界输出块或长结果文件关联到调用，保留命令、目录、终态及可见的分段或截断说明。 | 同轮静默后连续输出超出页面窗口，仍可查询最早留存段或截断标记、最终退出状态。（AC04、AC13） | TODO |
-| T219 · 处理日志写入失败 | 阶段入口 | `coding/manager.py`、`coding/runtime_adapter.py`、`src/lib/coding.ts`。对提交失败停止新的工具与写入派发，通知当前会话存储故障，保留同次操作 ID 与此前证据。 | 使临时库写入失败，服务返回或推送故障状态，随后命令计数不增长。恢复后可按原请求查询。（AC25） | TODO |
-| T220 · 区分各类 Coding 错误 | T207、T214、T219 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`、`src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`。把断线、拒绝、模型错误、命令失败和存储故障映射到对应轮次与恢复动作。 | 触发每类故障并切换语言，原模型身份、受影响调用和前序证据可查，未知结论有明确标识。（AC25） | TODO |
+| T212 · 持久化 Provider 配置 | 阶段入口 | `coding/profiles.py`、`providers.py`、`coding/routes.py`。提供 Web 配置读写，服务端保存或引用版本化凭据，仅返回掩码和非秘密配置。 | 通过 API 保存两份配置，重读及失败响应中凭据标记均为零，所选测试 Provider 收到正确凭据。（AC11、AC24） | DONE |
+| T213 · 按轮生效与立即撤权 | T212 | `coding/profiles.py`、`coding/manager.py`、`coding/runtime_adapter.py`。提交时固定端点、模型、预算、权限和扩展版本。派发前检查凭据是否已撤销及当前强制拒绝。 | 在一轮中改模型，本轮实际请求与下一轮分属两个快照。撤销凭据后相应调用报告错误。（AC11、AC24、AC25） | DONE |
+| T214 · 接入设置页 | T212、T213 | `src/pages/CodingSettings.tsx`、`src/lib/coding.ts`、`src/main.tsx`、`providers.py`、`mock.py`。选择受支持 Provider、模型和显式的演示来源，显示掩码、配置版本与连接错误。 | 用两份配置发起请求。真实配置错误可定位到原模型，演示来源有标识，旧轮次仍显示原模型。（AC11、AC25） | DONE |
+| T215 · 加载会话 Skill | T213 | `coding/profiles.py`、`coding/routes.py`、`coding/runtime_adapter.py`、`src/pages/CodingSettings.tsx`。列出可用 Skill，保存 Web 选择，通过原生加载器将所选版本装入对应会话并回报失败原因。 | 加载带识别行为的 Skill 并调用。另一配置无该行为，损坏的 Skill 显示加载原因。（AC12） | DONE |
+| T216 · 管理 MCP 连接 | T213 | `coding/runtime_adapter.py`、`coding/routes.py`、`src/pages/CodingSettings.tsx`。复用原生 MCP 管理器，显示连接、断开及已启用工具。把工具调用关联到本会话的动作许可。 | 连接本地测试服务，调用返回独有标记。断开后工具不可用，连接失败能在设置中定位。（AC12） | DONE |
+| T217 · 记录 Hook 的执行结果 | T213 | `coding/runtime_adapter.py`、`src/components/CodingTimeline.tsx`、`src/pages/CodingSettings.tsx`。装载已选 Hooks 的固定配置，展示适用的扩展、Hook 来源及 Runtime 提供的结果。 | 让两会话使用不同 Hook，只有目标会话收到标记事件，写动作可追到本次许可。（AC12、AC19） | DONE |
+| T218 · 保存长输出与任务进度 | 阶段入口 | `coding/actions.py`、`coding/store.py`、`src/components/CodingTimeline.tsx`。将有界输出块或长结果文件关联到调用，保留命令、目录、终态及可见的分段或截断说明。 | 同轮静默后连续输出超出页面窗口，仍可查询最早留存段或截断标记、最终退出状态。（AC04、AC13） | DONE |
+| T219 · 处理日志写入失败 | 阶段入口 | `coding/manager.py`、`coding/runtime_adapter.py`、`src/lib/coding.ts`。对提交失败停止新的工具与写入派发，通知当前会话存储故障，保留同次操作 ID 与此前证据。 | 使临时库写入失败，服务返回或推送故障状态，随后命令计数不增长。恢复后可按原请求查询。（AC25） | DONE |
+| T220 · 区分各类 Coding 错误 | T207、T214、T219 | `src/components/CodingTimeline.tsx`、`src/pages/CodingWorkspace.tsx`、`src/i18n/types.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`。把断线、拒绝、模型错误、命令失败和存储故障映射到对应轮次与恢复动作。 | 触发每类故障并切换语言，原模型身份、受影响调用和前序证据可查，未知结论有明确标识。（AC25） | DONE |
 
 ### 普通会话实测
 
 | 任务与目标 | 直接依赖 | 涉及文件与实施内容 | 测试操作与通过条件 | 状态 |
 | --- | --- | --- | --- | --- |
-| T221 · 覆盖动作与请求竞争 | T201、T203、T209、T219 | `webdemo/tests/test_coding_lifecycle.py`。用临时库和独立连接重送轮次、权限、取消与动作，并在完成和取消之间并发提交。 | 运行该文件的竞态用例，确认一个受理、一个终态、一个计数标记。旧许可或越权答复均无法派发。（AC05、AC06、AC07、AC22） | TODO |
-| T222 · 覆盖服务重启与续读 | T207、T208、T209、T211 | `webdemo/tests/recovery.py`。在恢复脚本添加独立 Coding 数据目录、可控中断点和同次会话的客户端/服务端事件比对。 | 运行恢复脚本，分别核对断线补读、未知结果及压缩后的上下文，旧 RSI 恢复场景仍通过。（AC08、AC09、AC10） | TODO |
-| T223 · 验证 Coding 可独立工作 | T212、T214 | `webdemo/tests/api_smoke.py`。在无 Benchmark、归档、Mock 服务及评分设施的环境新建并恢复普通会话，另行检查写请求来源。 | Coding 服务可读取未提交文件并在同一会话继续。无效来源被拒。记录会话 ID 和工具结果。（AC05、AC19） | TODO |
-| T224 · 验收真实多轮与恢复 | T204、T207、T211、T214 | `webdemo/tests/browser.py`。在 browser.py 增加普通会话场景 coding_real，使用真实 Provider 解释失败测试、追问修复、关闭重开再询问。 | 从浏览器取得模型标识、失败与成功的同项测试输出、工具记录和 Git Diff，独立重跑通过。（AC02） | TODO |
-| T225 · 启动长任务并关闭页面 | T203、T207、T218 | `webdemo/tests/browser.py`。在独立验收仓库增加 coding_long 场景，设超过 30 分钟的预算，启动含静默及长输出的本地任务，切换会话后关闭全部页面。 | 保存服务端开始时间、turn_id 和调用标识。确认浏览器上下文无打开页面，服务端任务仍在推进。（AC13） | TODO |
-| T226 · 重开并验收满 30 分钟 | T225 | `webdemo/tests/browser.py`。同一场景重开原会话，查看离线期间的进度。实际运行至少 30 分钟后从 Web 取消并核对清理。 | 同一 turn_id 的服务端开始与取消时间差至少 1800 秒，长输出与终态可查，父子进程回收，另一会话可写。（AC07、AC13） | TODO |
-| T227 · 验收第二阶段 | 本阶段全部前项 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/browser.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。核对路径边界、测试凭据、配置与扩展的实测记录，把真实多轮和长任务证据登记到阶段报告。 | AC02、AC07–AC13 及 AC19、AC22–AC25 的 Coding 部分均有操作与结果。真实编程可在原会话继续后开放第三阶段。（AC02、AC07、AC08、AC09、AC10、AC11、AC12、AC13、AC19、AC22、AC23、AC24、AC25） | TODO |
+| T221 · 覆盖动作与请求竞争 | T201、T203、T209、T219 | `webdemo/tests/test_coding_lifecycle.py`。用临时库和独立连接重送轮次、权限、取消与动作，并在完成和取消之间并发提交。 | 运行该文件的竞态用例，确认一个受理、一个终态、一个计数标记。旧许可或越权答复均无法派发。（AC05、AC06、AC07、AC22） | DONE |
+| T222 · 覆盖服务重启与续读 | T207、T208、T209、T211 | `webdemo/tests/recovery.py`。在恢复脚本添加独立 Coding 数据目录、可控中断点和同次会话的客户端/服务端事件比对。 | 运行恢复脚本，分别核对断线补读、未知结果及压缩后的上下文，旧 RSI 恢复场景仍通过。（AC08、AC09、AC10） | DONE |
+| T223 · 验证 Coding 可独立工作 | T212、T214 | `webdemo/tests/api_smoke.py`。在无 Benchmark、归档、Mock 服务及评分设施的环境新建并恢复普通会话，另行检查写请求来源。 | Coding 服务可读取未提交文件并在同一会话继续。无效来源被拒。记录会话 ID 和工具结果。（AC05、AC19） | DONE |
+| T224 · 验收真实多轮与恢复 | T204、T207、T211、T214 | `webdemo/tests/browser.py`。在 browser.py 增加普通会话场景 coding_real，使用真实 Provider 解释失败测试、追问修复、关闭重开再询问。 | 从浏览器取得模型标识、失败与成功的同项测试输出、工具记录和 Git Diff，独立重跑通过。（AC02） | DONE |
+| T225 · 启动长任务并关闭页面 | T203、T207、T218 | `webdemo/tests/browser.py`。在独立验收仓库增加 coding_long 场景，设超过 30 分钟的预算，启动含静默及长输出的本地任务，切换会话后关闭全部页面。 | 保存服务端开始时间、turn_id 和调用标识。确认浏览器上下文无打开页面，服务端任务仍在推进。（AC13） | DONE |
+| T226 · 重开并验收满 30 分钟 | T225 | `webdemo/tests/browser.py`。同一场景重开原会话，查看离线期间的进度。实际运行至少 30 分钟后从 Web 取消并核对清理。 | 同一 turn_id 的服务端开始与取消时间差至少 1800 秒，长输出与终态可查，父子进程回收，另一会话可写。（AC07、AC13） | DONE |
+| T227 · 验收第二阶段 | 本阶段全部前项 | `webdemo/tests/test_coding_lifecycle.py`、`webdemo/tests/browser.py`、`docs/redesign/task.md`、`docs/redesign/checklist.md`。核对路径边界、测试凭据、配置与扩展的实测记录，把真实多轮和长任务证据登记到阶段报告。 | AC02、AC07–AC13 及 AC19、AC22–AC25 的 Coding 部分均有操作与结果。真实编程可在原会话继续后开放第三阶段。（AC02、AC07、AC08、AC09、AC10、AC11、AC12、AC13、AC19、AC22、AC23、AC24、AC25） | DONE |
+
+### 第二阶段交付记录 · 2026-11-24
+
+T201–T227 已完成。阶段证据包括实际模型请求、同一轮的服务端时间、命令退出、磁盘计数与完整性摘要。[第二阶段证据清单](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/manifest.json>)
+
+| 交付 | 实际改动与复核 |
+| --- | --- |
+| 取消与写入权 | `webdemo/coding/{manager,store,worker,actions}.py` 在一个事务中受理取消、冻结答复并将写入权标为清理中。受管进程通过独立的 macOS 审计会话启动，监督者在服务退出后仍可核实整棵进程树的结束。两个数据库连接竞争终态，延迟清理期间另一会话可读、不能写，另一工作树的写任务继续。 |
+| 重启、续读与压缩 | `webdemo/api.py`、`coding/{routes,runtime_adapter}.py`、`src/lib/coding.ts` 和 `CodingTimeline.tsx` 恢复已提交的事件和待答授权。浏览器经历两次断线、一次应用失败和一次游标重置。服务失联后，计数文件仍只有一条标记。真实原生压缩后重启，摘要和保留细节在模型输入中各出现一次。 |
+| Provider 与扩展 | `coding/{models,profiles,mcp_bridge}.py`、`CodingSettings.tsx` 和 `CodingWorkspace.tsx` 接通按轮冻结的模型配置、凭据撤销、Skills、MCP 和命令 Hooks。浏览器能看到实际 MCP 工具名、回执及错误来源。失效凭据产生真实端点的 401。 |
+| 真实编程 | `deepseek-official / deepseek-flash` 在会话 `728c49c9-3591-4676-a3ad-ddd11b0a5359` 中复现、解释和修复加法错误。关闭全部页面并重开后第三轮能回答原实际值 1 和期望值 5。工作树独立重跑通过。[真实模型、退出码及答复](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/real/identity.json>) |
+| 关页长任务 | 会话 `9e42b882-8a07-4b28-946a-48c993e08a1e` 的轮次 `2334bf1f-6146-4f52-afaa-b92cdb3af58a` 从运行到 Web 受理取消经过 **1801.46 秒**。重开后可见离线产生的输出，保留 2097152 字节并标注截断。取消后两个受测进程均已退出，命令临时目录计数为零，另一会话成功写入。[时间线与清理凭据](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/long.json>) |
+| 自动回归 | 21 项 Coding 生命周期用例通过。前端类型检查和生产构建通过。项目原测试 758 项通过、1 项跳过，并报告一个未注册的 pytest timeout 标记。锁定镜像上的既有 RSI 恢复脚本通过，T101 原生会话及历史归档重新比对一致。[Coding 用例](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/lifecycle.txt>) · [原测试输出](</Users/tianmu/Library/Application Support/MewCode/Redesign/T227/native.txt>) |
+| 验收入口 | `webdemo/tests/test_coding_lifecycle.py`、`api_smoke.py --coding`、`recovery.py --coding`。浏览器场景包括 `coding_real`、`coding_long`、`coding_stability`、`coding_settings`、`coding_extensions` 和 `coding_provider_error`。这些场景分别建立临时 Git 仓库、状态库与服务。 |
+
+本机 Shell 监督在 macOS ARM64 登录会话完成验收。首次长任务验收脚本使用了随最后一页关闭的临时浏览器上下文；改为显式上下文后，两次完整运行分别达到 1801.24 秒和 1801.46 秒。第三阶段从 T301 开始交付独立 RSI Center。
 
 ## Phase 3 · 独立 RSI Center
 
