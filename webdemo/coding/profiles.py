@@ -463,7 +463,11 @@ def for_session(store, sid, profile):
             }
         else:
             snap = snapshot(profile, store.root)
-            snap.update(source="native", profile_id=profile or snap["provider"])
+            snap.update(
+                schema_version=2,
+                source="native",
+                profile_id=profile or snap["provider"],
+            )
     catalog = extension_catalog(session["directory"], store)
     options = (
         json.loads(selected[0])

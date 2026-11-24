@@ -325,7 +325,12 @@ def coding():
                 )
             )
         if "recent details" in tail:
-            return delta(content="EARLY-SUMMARY-17 / RECENT-DETAIL-23")
+            import re
+
+            facts = re.findall(
+                r"(?:EARLY-SUMMARY|RECENT-DETAIL)-[0-9]+", json.dumps(messages[:-1])
+            )
+            return delta(content=" / ".join(facts))
         if "read my file" in tail:
             return delta(("ReadFile", {"file_path": "fact.txt"}))
         return delta(content="received")
@@ -380,9 +385,9 @@ def coding():
         else:
             raise AssertionError("cleanup proof missing")
         assert (repo / "count.txt").read_text() == "x"
-        assert any(item["path"]=="count.txt" for item in c.get(path+"/diff").json())
-        resumed=turn(c,path,"resume after interruption")["turn_id"]
-        assert finished(c,path,resumed)["turns"][-1]["state"]=="completed"
+        assert any(item["path"] == "count.txt" for item in c.get(path + "/diff").json())
+        resumed = turn(c, path, "resume after interruption")["turn_id"]
+        assert finished(c, path, resumed)["turns"][-1]["state"] == "completed"
         # 使用原生运行时写入多轮历史，再降低下一轮的上下文窗口以触发真实压缩。
         new = post(c, "sessions", directory=str(repo))["session_id"]
         ctx = "sessions/" + new
@@ -418,6 +423,12 @@ def coding():
         boundary_view = c.get(ctx + "/view").json()
         assert boundary_view["events"] == compact["events"]
         final = finished(c, ctx, turn(c, ctx, "recall recent details")["turn_id"])
+        answer = "".join(
+            e["payload"]["text"]
+            for e in final["events"]
+            if e["turn_id"] == final["turns"][-1]["turn_id"] and e["kind"] == "text"
+        )
+        assert answer == "EARLY-SUMMARY-17 / RECENT-DETAIL-23"
         msgs = json.dumps(requests[-1])
         assert (
             msgs.count("EARLY-SUMMARY-17") == 1
@@ -441,13 +452,15 @@ def coding():
                     "lost_turn": tid,
                     "restored": v["turns"],
                     "replayed": [e["seq"] for e in expected],
-                    "disk_count": 1,"continued_after_interrupt":resumed,
+                    "disk_count": 1,
+                    "continued_after_interrupt": resumed,
                     "compact_session": new,
                     "boundary": [
                         e for e in compact["events"] if e["kind"] == "compact"
                     ],
                     "model_input_summary_count": msgs.count("EARLY-SUMMARY-17"),
                     "model_input_detail_count": msgs.count("RECENT-DETAIL-23"),
+                    "answer": answer,
                 },
                 indent=2,
             )
