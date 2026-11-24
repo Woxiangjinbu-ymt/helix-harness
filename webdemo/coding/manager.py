@@ -560,6 +560,9 @@ class Manager:
                     await asyncio.sleep(0.5)
 
     async def probe(self, tree, cwd, config, stop=None):
+        if "binding_error" in config:
+            raise ValueError(config["name"] + " · " + config["binding_error"])
+
         async def quiet(kind, value):
             pass
 

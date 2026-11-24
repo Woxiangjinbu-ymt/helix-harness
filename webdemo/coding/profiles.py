@@ -276,7 +276,62 @@ def stage_skills(base, target, errors):
                 errors.append("Skill 文件不可用 " + name)
 
 
-def extension_catalog(directory):
+def mcp_definitions(config, store):
+    """仅解析该服务显式声明的环境和请求头，冻结到受保护的绑定。"""
+    from mewcode.config import resolve_env_vars
+
+    if not config.mcp_servers:
+        return {}
+    model_keys = {p.resolve_api_key() for p in config.providers}
+    if store:
+        with store.connection() as db:
+            model_keys.update(
+                r[0]
+                for r in db.execute(
+                    "SELECT secret FROM credentials WHERE revoked IS NULL"
+                )
+            )
+    result = {}
+    for server in config.mcp_servers:
+        definition = asdict(server)
+        env_fields = (server.env, server.headers)
+        if not (
+            all(
+                isinstance(group, dict)
+                and all(
+                    isinstance(k, str) and isinstance(v, str) for k, v in group.items()
+                )
+                for group in env_fields
+            )
+            and isinstance(server.args, list)
+            and all(isinstance(v, str) for v in server.args)
+            and isinstance(server.url or "", str)
+        ):
+            result[server.name] = {
+                "name": server.name,
+                "binding_error": "MCP 启动参数、环境或请求头格式无效",
+            }
+            continue
+        for field in ("env", "headers"):
+            definition[field] = {
+                k: resolve_env_vars(v) for k, v in definition[field].items()
+            }
+        configured = [
+            *definition["env"].values(),
+            *definition["headers"].values(),
+            *definition["args"],
+            definition["url"] or "",
+        ]
+        if any(key and key in value for key in model_keys for value in configured):
+            definition = {
+                "name": server.name,
+                "binding_error": "MCP 配置引用了模型凭据",
+            }
+        result[server.name] = definition
+    return result
+
+
+def extension_catalog(directory, store=None):
     from pathlib import Path
 
     from mewcode.config import AppConfig
@@ -289,7 +344,7 @@ def extension_catalog(directory):
     definitions, _ = command_hooks(config)
     result = {
         "skills": {},
-        "mcp": {m.name: asdict(m) for m in config.mcp_servers},
+        "mcp": mcp_definitions(config, store),
         "hooks": {},
         "errors": [],
     }
@@ -409,7 +464,7 @@ def for_session(store, sid, profile):
         else:
             snap = snapshot(profile, store.root)
             snap.update(source="native", profile_id=profile or snap["provider"])
-    catalog = extension_catalog(session["directory"])
+    catalog = extension_catalog(session["directory"], store)
     options = (
         json.loads(selected[0])
         if selected

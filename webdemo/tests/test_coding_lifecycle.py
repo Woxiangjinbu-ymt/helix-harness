@@ -1214,11 +1214,13 @@ def test_session_bound_extensions_and_disconnect(configured, monkeypatch):
     )
     (skill.parent / "bad.md").write_text("---\n: [invalid YAML\n---\n")
     doc = json.loads(config.read_text())
+    monkeypatch.setenv("EXTENSION_FIXTURE_REFERENCE", "declared-value-82")
     doc["mcp_servers"] = [
         {
             "name": "fixture",
             "command": str(Path(sys.base_prefix) / "bin/python3"),
-            "args": ["-B", "stamp.py"],
+            "env": {"MCP_FIXTURE_KEY": "${EXTENSION_FIXTURE_REFERENCE}"},
+            "args": ["-B", "stamp.py", "--check-env"],
         },
         {"name": "missing", "command": "/missing/fixture"},
     ]
@@ -1230,6 +1232,13 @@ def test_session_bound_extensions_and_disconnect(configured, monkeypatch):
             "action": {"type": "command", "command": "printf HOOK-725", "timeout": 8},
         }
     ]
+    doc["mcp_servers"].append(
+        {
+            "name": "protected",
+            "command": "python3",
+            "env": {"UNRELATED": "${MODEL_CREDENTIAL_TEST_MARKER}"},
+        }
+    )
     config.write_text(json.dumps(doc))
     base = "/api/coding/sessions"
     a, b = [
@@ -1277,7 +1286,13 @@ def test_session_bound_extensions_and_disconnect(configured, monkeypatch):
     t = turn(client, b, "read my file")
     other = finished(client, b, t["turn_id"])
     assert observed[-1] == (False, False) and "HOOK-725" not in str(other["events"])
+    forbidden = client.post(a + "/mcp/protected/connect", json={})
+    assert forbidden.status_code == 422 and "local-demo" not in forbidden.text
     post(client, a + "/settings", skills=[], mcp=[], hooks=["audit"])
+    assert (
+        client.get(a + "/settings").json()["connections"]["fixture"]["status"]
+        == "disconnected"
+    )
     t = turn(client, a, "read my file")
     pending = wait_for(client, a, lambda v: v["permissions"] or v["turns"][-1]["ended"])
     assert pending["permissions"]

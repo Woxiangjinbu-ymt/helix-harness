@@ -259,7 +259,7 @@ def options(sid: str):
                 "SELECT name,document FROM mcp_connections WHERE session=?", (sid,)
             )
         }
-    catalog = profiles.extension_catalog(session["directory"])
+    catalog = profiles.extension_catalog(session["directory"], store())
     kinds = ("skills", "mcp", "hooks")
     selected = (
         json.loads(row[0])
@@ -289,6 +289,19 @@ def set_options(sid: str, form: SessionOptions):
         ):
             raise ValueError(f"{kind} 包含不可用的扩展")
     with store().connection(True) as db:
+        prior = db.execute(
+            "SELECT document FROM session_options WHERE session=?", (sid,)
+        ).fetchone()
+        previous_mcp = json.loads(prior[0]).get("mcp", []) if prior else []
+        for name in set(previous_mcp) - set(form.mcp):
+            db.execute(
+                "INSERT OR REPLACE INTO mcp_connections VALUES(?,?,?)",
+                (
+                    sid,
+                    name,
+                    json.dumps({"name": name, "tools": [], "status": "disconnected"}),
+                ),
+            )
         db.execute(
             "INSERT OR REPLACE INTO session_options VALUES(?,?)",
             (sid, json.dumps(values)),
@@ -302,7 +315,7 @@ async def connect(sid: str, name: str):
     tree = location(sid)
     with store().connection() as db:
         session = store().session(sid, db)
-    catalog = profiles.extension_catalog(session["directory"])
+    catalog = profiles.extension_catalog(session["directory"], store())
     if name not in catalog["mcp"]:
         raise KeyError(name)
     try:

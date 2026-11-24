@@ -35,7 +35,11 @@ export function CodingSettings({ sid }: { sid: string }) {
   const word = (zh: string, en: string) => (locale === "zh" ? zh : en);
   const [rev, setRev] = useState(0);
   const profiles = useData<Profile[]>("coding/profiles", rev);
-  const options = useData<Options>(sid ? sessionPath(sid) + "/settings" : null);
+  const [connectionRev, refreshConnections] = useState(0);
+  const options = useData<Options>(
+    sid ? sessionPath(sid) + "/settings" : null,
+    connectionRev,
+  );
   const [selected, select] = useState(
     localStorage.getItem("coding.profile") || "",
   );
@@ -135,6 +139,7 @@ export function CodingSettings({ sid }: { sid: string }) {
                           ...next,
                         });
                         bind(next);
+                        refreshConnections((n) => n + 1);
                       });
                     }}
                   />

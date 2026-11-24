@@ -1,8 +1,12 @@
 """Disposable loopback fixture for the native MCP client. Standard-library only."""
 
 import json
+import os
 import sys
 from pathlib import Path
+
+if "--check-env" in sys.argv and os.getenv("MCP_FIXTURE_KEY") != "declared-value-82":
+    raise SystemExit(2)
 
 for line in sys.stdin:
     request = json.loads(line)
