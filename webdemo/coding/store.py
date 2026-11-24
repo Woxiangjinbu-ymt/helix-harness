@@ -6,7 +6,7 @@ import os
 import sqlite3
 from contextlib import closing, contextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -172,16 +172,16 @@ class Store:
             sql += " LIMIT ?"
             params.append(limit)
         return [
-            dict(
-                session_id=r["session"],
-                turn_id=r["turn"],
-                seq=r["seq"],
-                source_id=r["source"],
-                schema_version=1,
-                kind=r["kind"],
-                payload=json.loads(r["payload"]),
-                recorded_at=r["recorded"],
-            )
+            {
+                "session_id": r["session"],
+                "turn_id": r["turn"],
+                "seq": r["seq"],
+                "source_id": r["source"],
+                "schema_version": 1,
+                "kind": r["kind"],
+                "payload": json.loads(r["payload"]),
+                "recorded_at": r["recorded"],
+            }
             for r in db.execute(sql, params)
         ]
 

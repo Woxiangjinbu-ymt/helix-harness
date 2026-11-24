@@ -61,7 +61,7 @@ async def file_action(tree, cwd, tool, args, seen, scratch):
     path = tree.resolve(args["file_path"], cwd)
     name = path.relative_to(tree.root).as_posix()
     try:
-        before = tree.read(name)
+        before = await asyncio.to_thread(tree.read, name)
     except FileNotFoundError:
         before = None
     signature = content_id(before) if before is not None else None
@@ -240,6 +240,7 @@ def shell_child(directory):
                 "-c",
                 spec["command"],
             ],
+            check=False,
             env=spec["env"],
             cwd=spec["cwd"],
             stdin=subprocess.DEVNULL,
@@ -301,19 +302,19 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
         listener.bind(address)
         listener.listen(1)
         listener.settimeout(15)
-        spec = dict(
-            command=command,
-            cwd=str(cwd),
-            profile=shell_profile(tree, scratch, state),
-            socket=address,
-            env={
+        spec = {
+            "command": command,
+            "cwd": str(cwd),
+            "profile": shell_profile(tree, scratch, state),
+            "socket": address,
+            "env": {
                 "PATH": f"{sys.base_prefix}/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin",
                 "HOME": str(scratch),
                 "TMPDIR": str(scratch),
                 "LANG": "en_US.UTF-8",
                 "PYTHONDONTWRITEBYTECODE": "1",
             },
-        )
+        }
         # scratch 在私有状态目录下。只向命令重新授予这一小块临时空间。
         escaped = json.dumps(str(scratch), ensure_ascii=False)
         spec["profile"] += f"\n(allow file-read* file-write* (subpath {escaped}))"
@@ -399,12 +400,14 @@ async def run_shell(tree, cwd, command, timeout, state, notify):
                 await drain()
             exitfile = directory / "exit"
             code = int(exitfile.read_text()) if exitfile.exists() else None
-            with (
-                output_path.open("rb")
-                if output_path.exists()
-                else open(os.devnull, "rb") as stream
-            ):
-                message = stream.read(READ_LIMIT).decode(errors="replace")
+
+            def read_output():
+                if not output_path.is_file():
+                    return ""
+                with output_path.open("rb") as stream:
+                    return stream.read(READ_LIMIT).decode(errors="replace")
+
+            message = await asyncio.to_thread(read_output)
             await notify(
                 "process_exited",
                 {"job": label, "exit_code": code, "timed_out": timed_out},

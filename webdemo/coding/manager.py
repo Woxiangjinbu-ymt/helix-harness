@@ -148,19 +148,19 @@ class Manager:
                     instructions.append(tree.read(name).decode())
                 except (OSError, ValueError):
                     continue
-            return job, dict(
-                instance=job.instance,
-                session_id=sid,
-                root=tree.root,
-                directory=str(directory),
-                private_dir=str(scratch),
-                rules=str(rules),
-                snapshot=snap,
-                credential=secret,
-                history=records,
-                hooks=definitions,
-                instructions="\n".join(instructions),
-            )
+            return job, {
+                "instance": job.instance,
+                "session_id": sid,
+                "root": tree.root,
+                "directory": str(directory),
+                "private_dir": str(scratch),
+                "rules": str(rules),
+                "snapshot": snap,
+                "credential": secret,
+                "history": records,
+                "hooks": definitions,
+                "instructions": "\n".join(instructions),
+            }
 
     def append(self, db, job, kind, data, source=None):
         if job.secret:
@@ -202,19 +202,19 @@ class Manager:
             "timeout": hook.action.timeout,
         }
         call, aid = uid(), uid()
-        item = dict(
-            call_id=call,
-            parent_call_id=p["parent_call"],
-            hook_id=hook.id,
-            tool="Bash",
-            args=args,
-        )
+        item = {
+            "call_id": call,
+            "parent_call_id": p["parent_call"],
+            "hook_id": hook.id,
+            "tool": "Bash",
+            "args": args,
+        }
         job.calls[call] = item
         with self.store.connection(True) as db:
             self.append(db, job, "tool_call", item)
         try:
             result = await self.action(
-                job, dict(tool="Bash", args=args, call_id=call, action_id=aid)
+                job, {"tool": "Bash", "args": args, "call_id": call, "action_id": aid}
             )
         except (Conflict, ValueError, OSError) as exc:
             result = {"is_error": True, "output": str(exc)}
@@ -256,19 +256,47 @@ class Manager:
             self.running[tid] = job
             proc = job.process = await worker.start_process()
             await worker.send(proc.stdin, initial)
-            while line := await proc.stdout.readline():
-                message = json.loads(line)
+            reads = []
 
-                reply = await self.dispatch(job, message)
+            async def deliver(message, signature):
+                reply = await self.respond(job, message, signature)
                 await worker.send(proc.stdin, reply)
-                if message["kind"] == "finish" and "error" not in reply:
-                    final, reason = reply["result"]["state"], reply["result"]["reason"]
-                    break
+                return reply
+
+            async with asyncio.TaskGroup() as group:
+                while line := await proc.stdout.readline():
+                    message = json.loads(line)
+                    kind = message["kind"]
+                    # 原生调度器只把无副作用的文件查询编为并行批次。其余操作等待前批结束。
+                    parallel = kind == "action" and message["payload"].get("tool") in (
+                        "ReadFile",
+                        "Glob",
+                        "Grep",
+                    )
+                    if not parallel and reads:
+                        await asyncio.gather(*reads)
+                        reads.clear()
+                    signature = self.accept_frame(job, message)
+                    if parallel:
+                        reads.append(group.create_task(deliver(message, signature)))
+                        continue
+                    reply = await deliver(message, signature)
+                    if kind == "finish" and "error" not in reply:
+                        final, reason = (
+                            reply["result"]["state"],
+                            reply["result"]["reason"],
+                        )
+                        break
+                if not proc.stdout.at_eof():
+                    await asyncio.gather(*reads)
+                else:
+                    for read in reads:
+                        read.cancel()
             if proc.stdin:
                 proc.stdin.close()
             if await proc.wait() != 0 and final == "completed":
                 final, reason = "failed", "执行进程异常退出"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — 进程故障边界需提交轮次终态
             final, reason = "failed", str(exc)
         finally:
             if job and job.process and job.process.returncode is None:
@@ -281,15 +309,24 @@ class Manager:
             self.finalize(sid, tid, final, reason)
 
     async def dispatch(self, job, message):
+        return await self.respond(job, message, self.accept_frame(job, message))
+
+    def accept_frame(self, job, message):
         seq = message["seq"]
         signature = digest(message)
         if self.running.get(job.tid) is not job or message["instance"] != job.instance:
             raise ValueError("未知执行实例")
         if seq == job.last_seq and signature == job.last_request:
-            return job.last_reply
+            return None
         if seq != job.last_seq + 1:
             raise ValueError("执行事件序号无效")
         job.last_seq = seq
+        return signature
+
+    async def respond(self, job, message, signature):
+        if signature is None:
+            return job.last_reply
+        seq = message["seq"]
         try:
             result = await self.handle(job, message["kind"], message["payload"])
             reply = {"seq": seq, "result": result}
@@ -303,7 +340,8 @@ class Manager:
                         "write_conflict",
                         {"call_id": message["payload"].get("call_id"), **exc.details},
                     )
-        job.last_request, job.last_reply = signature, reply
+        if seq == job.last_seq:
+            job.last_request, job.last_reply = signature, reply
         return reply
 
     async def handle(self, job, kind, p):
@@ -337,11 +375,13 @@ class Manager:
                 ).rowcount
                 if updated != 1:
                     raise Conflict("授权已失效")
-                db.execute(
-                    "UPDATE turns SET state='running' WHERE id=? AND state='waiting_permission'",
-                    (job.tid,),
-                )
-                self.append(db, job, "state", {"state": "running"})
+                changed = db.execute(
+                    """UPDATE turns SET state='running' WHERE id=? AND state='waiting_permission'
+                       AND NOT EXISTS (SELECT 1 FROM permissions WHERE turn=? AND state IN ('waiting','answered'))""",
+                    (job.tid, job.tid),
+                ).rowcount
+                if changed:
+                    self.append(db, job, "state", {"state": "running"})
             return True
         if kind in ("action", "save_rule"):
             return await self.action(job, p, kind == "save_rule")
@@ -356,21 +396,21 @@ class Manager:
                 ):
                     item = json.loads(event[0])
                     for name in item.get("touched", []):
-                        changes[name] = dict(
-                            path=name,
-                            call_id=item["call_id"],
-                            after=None,
-                            uncertain=True,
-                        )
+                        changes[name] = {
+                            "path": name,
+                            "call_id": item["call_id"],
+                            "after": None,
+                            "uncertain": True,
+                        }
                     name = item.get("path")
                     if name and ("after" in item or item.get("uncertain")):
                         had_mixed = name in changes and changes[name]["uncertain"]
-                        changes[name] = dict(
-                            path=name,
-                            call_id=item["call_id"],
-                            after=item.get("after"),
-                            uncertain=bool(had_mixed or item.get("uncertain")),
-                        )
+                        changes[name] = {
+                            "path": name,
+                            "call_id": item["call_id"],
+                            "after": item.get("after"),
+                            "uncertain": bool(had_mixed or item.get("uncertain")),
+                        }
                 for change in changes.values():
                     last = change.pop("after")
                     try:
@@ -510,12 +550,11 @@ class Manager:
                 return await self.action(job, p)
         writable = rule or tool in ("Bash", "WriteFile", "EditFile")
         with self.store.connection(True) as db:
-            if (
-                db.execute(
-                    "SELECT state FROM turns WHERE id=? AND worker=?",
-                    (job.tid, job.instance),
-                ).fetchone()[0]
-                != "running"
+            if db.execute(
+                "SELECT state FROM turns WHERE id=? AND worker=?",
+                (job.tid, job.instance),
+            ).fetchone()[0] not in (
+                ("running",) if writable else ("running", "waiting_permission")
             ):
                 raise Conflict("轮次不能派发工具")
             permission = db.execute(
@@ -661,6 +700,8 @@ class Manager:
                 result["output"] = result["output"].replace(job.secret, "[redacted]")
             self.store.remember(db, receipt_scope, aid, receipt_payload, result)
             facts = {k: v for k, v in result.items() if k != "output"}
+            if rule and result["is_error"]:
+                facts["rule_error"] = result["output"]
             self.append(
                 db, job, "action_ended", dict(call_id=call, action_id=aid, **facts)
             )

@@ -205,9 +205,25 @@ def wait_view(api, path, test):
 
 
 def test_live_runtime_authorization_and_reopen(configured, monkeypatch):
-    from webdemo import mock
+    import asyncio
 
-    client, repo, store, config = configured
+    from webdemo import mock
+    from webdemo.coding import actions
+
+    real_file_action = actions.file_action
+    second_returned = asyncio.Event()
+
+    async def delayed_read(tree, cwd, tool, args, seen, scratch):
+        if tool == "ReadFile" and args["file_path"] == "test.txt":
+            await asyncio.wait_for(second_returned.wait(), 4)
+        result = await real_file_action(tree, cwd, tool, args, seen, scratch)
+        if tool == "ReadFile" and args["file_path"] == "missing.txt":
+            second_returned.set()
+        return result
+
+    monkeypatch.setattr(actions, "file_action", delayed_read)
+
+    client, repo, _store, _config = configured
     requests = []
 
     def model(req):
@@ -255,13 +271,19 @@ def test_live_runtime_authorization_and_reopen(configured, monkeypatch):
         view = wait_view(
             client,
             path,
-            lambda v: sum(e["kind"] == "permission" for e in v["events"]) == count,
+            lambda v, expected=count: (
+                sum(e["kind"] == "permission" for e in v["events"]) == expected
+            ),
         )
         perm = [e["payload"] for e in view["events"] if e["kind"] == "permission"][-1]
         assert not (repo / file).exists()
         assert perm["scope"] == file
         endpoint = "/turns/" + tid + "/permissions/" + perm["permission_id"] + "/reply"
-        body = dict(request_id=str(uuid4()), decision=answer, feedback="only this call")
+        body = {
+            "request_id": str(uuid4()),
+            "decision": answer,
+            "feedback": "only this call",
+        }
         assert client.post(other + endpoint, json=body).status_code == 404
         r = client.post(path + endpoint, json=body)
         assert r.status_code == 200, r.text
@@ -282,6 +304,13 @@ def test_live_runtime_authorization_and_reopen(configured, monkeypatch):
         for e in v["events"]
         if e["kind"] == "tool_result"
     ]
+    ended_reads = [
+        calls[e["payload"]["call_id"]]["args"]["file_path"]
+        for e in v["events"]
+        if e["kind"] == "action_ended"
+        and calls[e["payload"]["call_id"]]["tool"] == "ReadFile"
+    ]
+    assert ended_reads == ["missing.txt", "test.txt"]
     assert dict(results) == {
         "test.txt": False,
         "missing.txt": True,
@@ -361,12 +390,12 @@ async def test_writer_supervision_and_external_edits(configured, tmp_path):
     async def action(j, tool, args, aid=None):
         call = uid()
         j.calls[call] = {"tool": tool, "args": args, "call_id": call}
-        params = dict(
-            call_id=call,
-            action_id=aid or uid(),
-            tool=tool,
-            args=TOOLS[tool].params_model.model_validate(args).model_dump(),
-        )
+        params = {
+            "call_id": call,
+            "action_id": aid or uid(),
+            "tool": tool,
+            "args": TOOLS[tool].params_model.model_validate(args).model_dump(),
+        }
         return await mgr.action(j, params)
 
     (repo / "spawn.py").write_text(
@@ -405,7 +434,7 @@ async def test_writer_supervision_and_external_edits(configured, tmp_path):
     assert (repo / "test.txt").read_text() == "external content\n"
     await mgr.handle(b, "finish", {"state": "completed"})
     with store.connection() as db:
-        summary = [e for e in store.events(db, b.sid) if e["kind"] == "summary"][0]
+        summary = next(e for e in store.events(db, b.sid) if e["kind"] == "summary")
         assert any(
             c["path"] == "test.txt" and c["uncertain"]
             for c in summary["payload"]["changes"]
@@ -426,7 +455,7 @@ def test_hook_has_own_permission_and_lease(configured, monkeypatch):
 
     if sys.platform != "darwin":
         pytest.skip("requires the macOS command sandbox")
-    client, repo, store, config = configured
+    client, repo, _store, config = configured
     doc = json.loads(config.read_text())
     doc["hooks"] = [
         {
@@ -455,7 +484,9 @@ def test_hook_has_own_permission_and_lease(configured, monkeypatch):
         v = wait_view(
             client,
             path,
-            lambda v: sum(e["kind"] == "permission" for e in v["events"]) == n,
+            lambda v, expected=n: (
+                sum(e["kind"] == "permission" for e in v["events"]) == expected
+            ),
         )
         wait = [e["payload"] for e in v["events"] if e["kind"] == "permission"][-1]
         call = next(
@@ -532,12 +563,12 @@ async def test_instance_ack_replay_and_storage_failure(configured, monkeypatch):
     args = {"file_path": "single.txt", "content": "one"}
     call, aid = uid(), uid()
     job.calls[call] = {"call_id": call, "args": args, "tool": "WriteFile"}
-    action = dict(
-        call_id=call,
-        action_id=aid,
-        tool="WriteFile",
-        args=TOOLS["WriteFile"].params_model.model_validate(args).model_dump(),
-    )
+    action = {
+        "call_id": call,
+        "action_id": aid,
+        "tool": "WriteFile",
+        "args": TOOLS["WriteFile"].params_model.model_validate(args).model_dump(),
+    }
     with store.connection(True) as db:
         db.execute(
             "CREATE TRIGGER break_intent BEFORE INSERT ON actions BEGIN SELECT RAISE(ABORT,'simulated disk error'); END"
@@ -575,7 +606,7 @@ def test_live_sessions_are_independent(configured, monkeypatch, tmp_path):
     from webdemo import mock
     from webdemo.coding.routes import manager
 
-    client, repo, store, config = configured
+    client, repo, _store, _config = configured
     other = tmp_path / "separate"
     git(tmp_path, "init", str(other))
     received = Event()
@@ -627,78 +658,352 @@ async def test_policy_at_execution_and_sandbox_unavailable(configured, monkeypat
     from webdemo.coding import actions
     from webdemo.coding.manager import TOOLS, Manager
     from webdemo.coding.store import uid
-    client,repo,store,config=configured
-    doc=json.loads(config.read_text());doc["permission_mode"]="bypassPermissions";config.write_text(json.dumps(doc))
-    sid=store.create_session(repo,"")["session_id"]
-    receipt,_=store.submit(sid,uid(),"test",lambda p:profiles.snapshot(p,store.root))
-    mgr=Manager(store);job,_=mgr.start_data(sid,receipt["turn_id"]);mgr.running[job.tid]=job
-    await mgr.handle(job,"ready",{})
-    def bind(tool,args):
-        call=uid()
-        job.calls[call]={"tool":tool,"args":args,"call_id":call}
-        return dict(tool=tool,args=TOOLS[tool].params_model.model_validate(args).model_dump(),call_id=call,action_id=uid())
-    job.rules.parent.mkdir(parents=True,exist_ok=True)
+
+    _client, repo, store, config = configured
+    doc = json.loads(config.read_text())
+    doc["permission_mode"] = "bypassPermissions"
+    config.write_text(json.dumps(doc))
+    sid = store.create_session(repo, "")["session_id"]
+    receipt, _ = store.submit(
+        sid, uid(), "test", lambda p: profiles.snapshot(p, store.root)
+    )
+    mgr = Manager(store)
+    job, _ = mgr.start_data(sid, receipt["turn_id"])
+    mgr.running[job.tid] = job
+    await mgr.handle(job, "ready", {})
+
+    def bind(tool, args):
+        call = uid()
+        job.calls[call] = {"tool": tool, "args": args, "call_id": call}
+        return {
+            "tool": tool,
+            "args": TOOLS[tool].params_model.model_validate(args).model_dump(),
+            "call_id": call,
+            "action_id": uid(),
+        }
+
+    job.rules.parent.mkdir(parents=True, exist_ok=True)
     job.rules.write_text('[{"effect":"ask","rule":"WriteFile(marker.txt)"}]')
-    p=bind("WriteFile",{"file_path":"marker.txt","content":"approved"})
-    task=asyncio.create_task(mgr.action(job,p))
+    p = bind("WriteFile", {"file_path": "marker.txt", "content": "approved"})
+    task = asyncio.create_task(mgr.action(job, p))
     for _ in range(100):
-        if job.waiting: break
-        await asyncio.sleep(.02)
-    pid=next(iter(job.waiting))
-    assert not (repo/"marker.txt").exists()
-    mgr.answer(sid,job.tid,pid,uid(),"allow","")
-    assert not (await task)["is_error"] and (repo/"marker.txt").read_text()=="approved"
+        if job.waiting:
+            break
+        await asyncio.sleep(0.02)
+    pid = next(iter(job.waiting))
+    assert not (repo / "marker.txt").exists()
+    mgr.answer(sid, job.tid, pid, uid(), "allow", "")
+    assert (
+        not (await task)["is_error"] and (repo / "marker.txt").read_text() == "approved"
+    )
     job.rules.write_text('[{"effect":"deny","rule":"Bash(pwd)"}]')
     with pytest.raises(ValueError):
-        await mgr.action(job,bind("Bash",{"command":"pwd"}))
+        await mgr.action(job, bind("Bash", {"command": "pwd"}))
     with monkeypatch.context() as m:
-        m.setattr(actions.sys,"platform","unsupported")
-        denied=await mgr.action(job,bind("Bash",{"command":"echo blocked > unwanted.txt"}))
+        m.setattr(actions.sys, "platform", "unsupported")
+        denied = await mgr.action(
+            job, bind("Bash", {"command": "echo blocked > unwanted.txt"})
+        )
         assert denied["is_error"] and "沙箱" in denied["output"]
     with store.connection() as db:
-        assert not any(e["kind"]=="process_started" for e in store.events(db,sid))
-    assert not (repo/"unwanted.txt").exists()
+        assert not any(e["kind"] == "process_started" for e in store.events(db, sid))
+    assert not (repo / "unwanted.txt").exists()
 
 
-def test_session_scoped_long_result_and_failed_rule(configured,monkeypatch):
+def test_session_scoped_long_result_and_failed_rule(configured, monkeypatch):
     from mewcode.permissions.rules import RuleEngine
     from webdemo import mock
-    client,repo,store,config=configured
-    (repo/"long.txt").write_text("a"*52000+"-end-of-long-output")
-    sid=client.post("/api/coding/sessions",json={"directory":str(repo)}).json()["session_id"]
-    path="/api/coding/sessions/"+sid
-    capture=[]
+
+    client, repo, store, _config = configured
+    (repo / "long.txt").write_text("a" * 52000 + "-end-of-long-output")
+    sid = client.post("/api/coding/sessions", json={"directory": str(repo)}).json()[
+        "session_id"
+    ]
+    path = "/api/coding/sessions/" + sid
+    capture = []
+
     def response(req):
         capture.append(req["messages"])
-        if len(capture)==1:
-            return delta(("ReadFile",{"file_path":"long.txt"}))
-        if len(capture)==2:
-            private=next((store.root/"sessions"/sid/"tool-results").glob("*.txt"))
-            return delta(("ReadFile",{"file_path":str(private)}))
-        if len(capture)==3:
-            return delta(("WriteFile",{"file_path":"rule.txt","content":"ok"}))
+        if len(capture) == 1:
+            return delta(("ReadFile", {"file_path": "long.txt"}))
+        if len(capture) == 2:
+            private = next(
+                (store.root / "sessions" / sid / "tool-results").glob("*.txt")
+            )
+            return delta(("ReadFile", {"file_path": str(private)}))
+        if len(capture) == 3:
+            return delta(("WriteFile", {"file_path": "rule.txt", "content": "ok"}))
         return delta(content="done")
-    monkeypatch.setattr(mock,"response",response)
+
+    monkeypatch.setattr(mock, "response", response)
+
     def failed_rule(*args):
         raise OSError("could not save rule")
-    monkeypatch.setattr(RuleEngine,"append_local_rule",failed_rule)
-    tid=client.post(path+"/turns",json={"submit_request_id":str(uuid4()),"text":"long read"}).json()["turn_id"]
-    handled=set()
+
+    monkeypatch.setattr(RuleEngine, "append_local_rule", failed_rule)
+    tid = client.post(
+        path + "/turns", json={"submit_request_id": str(uuid4()), "text": "long read"}
+    ).json()["turn_id"]
+    handled = set()
     import time
-    until=time.monotonic()+20
-    while time.monotonic()<until:
-        v=client.get(path+"/view").json()
+
+    until = time.monotonic() + 20
+    while time.monotonic() < until:
+        v = client.get(path + "/view").json()
         for event in v["events"]:
-            p=event["payload"]
-            if event["kind"]=="permission" and p["permission_id"] not in handled:
-                answer="allow_always" if p["scope"]=="rule.txt" else "allow"
-                r=client.post(path+"/turns/"+tid+"/permissions/"+p["permission_id"]+"/reply",
-                              json={"request_id":str(uuid4()),"decision":answer})
-                assert r.status_code==200
+            p = event["payload"]
+            if event["kind"] == "permission" and p["permission_id"] not in handled:
+                answer = "allow_always" if p["scope"] == "rule.txt" else "allow"
+                r = client.post(
+                    path
+                    + "/turns/"
+                    + tid
+                    + "/permissions/"
+                    + p["permission_id"]
+                    + "/reply",
+                    json={"request_id": str(uuid4()), "decision": answer},
+                )
+                assert r.status_code == 200
                 handled.add(p["permission_id"])
-        if v["turns"][0]["ended"]:break
-        time.sleep(.04)
-    assert v["turns"][0]["state"]=="completed"
-    assert len(capture)==4 and "-end-of-long-output" in str(capture[2][-1])
-    assert not any(e["kind"]=="action_ended" and e["payload"].get("scope") for e in v["events"])
-    assert not (repo/".mewcode").exists()
+        if v["turns"][0]["ended"]:
+            break
+        time.sleep(0.04)
+    assert v["turns"][0]["state"] == "completed"
+    assert len(capture) == 4 and "-end-of-long-output" in str(capture[2][-1])
+    assert not any(
+        e["kind"] == "action_ended" and e["payload"].get("scope") for e in v["events"]
+    )
+    assert not (repo / ".mewcode").exists()
+
+
+def test_lost_ready_ack_runs_model_once(configured, monkeypatch):
+    from webdemo import mock
+    from webdemo.coding import worker
+
+    client, repo, _store, _config = configured
+    calls = []
+    monkeypatch.setattr(
+        mock, "response", lambda req: calls.append(req["model"]) or delta(content="ok")
+    )
+    send = worker.send
+    dropped = []
+
+    async def drop_once(stream, message):
+        if not dropped and message == {"seq": 1, "result": True}:
+            dropped.append(message)
+            return
+        await send(stream, message)
+
+    monkeypatch.setattr(worker, "send", drop_once)
+    sid = client.post("/api/coding/sessions", json={"directory": str(repo)}).json()[
+        "session_id"
+    ]
+    path = "/api/coding/sessions/" + sid
+    client.post(
+        path + "/turns", json={"submit_request_id": str(uuid4()), "text": "once"}
+    ).raise_for_status()
+    view = wait_view(client, path, lambda v: v["turns"][0]["ended"])
+    assert view["turns"][0]["state"] == "completed" and len(dropped) == len(calls) == 1
+    final = [e for e in view["events"] if e["kind"] == "message_final"]
+    assert len(final) == 1
+    assert final[0]["payload"]["message_id"] == next(
+        e["payload"]["message_id"] for e in view["events"] if e["kind"] == "text"
+    )
+
+
+def test_alias_competition_through_http(configured, monkeypatch, tmp_path):
+    import json
+    import sys
+    import time
+    from collections import Counter
+
+    from webdemo import mock
+
+    if sys.platform != "darwin":
+        pytest.skip("requires the macOS command sandbox")
+    client, repo, _store, config = configured
+    doc = json.loads(config.read_text())
+    doc["permission_mode"] = "bypassPermissions"
+    config.write_text(json.dumps(doc))
+    alias = tmp_path / "alias"
+    alias.symlink_to(repo)
+    other = tmp_path / "other"
+    git(tmp_path, "init", str(other))
+    (repo / "hold.py").write_text(
+        "from pathlib import Path\nimport time\nPath('started').touch()\n"
+        "for _ in range(400):\n    if Path('release').exists():break\n    time.sleep(.05)\n"
+    )
+    counter = Counter()
+
+    def model(req):
+        label = next(
+            key
+            for key in ("retry-B", "writer-C", "reader-B", "writer-A")
+            if key in str(req["messages"])
+        )
+        counter[label] += 1
+        steps = {
+            "writer-A": [("Bash", {"command": "python3 hold.py"})],
+            "reader-B": [
+                ("ReadFile", {"file_path": "test.txt"}),
+                ("WriteFile", {"file_path": "blocked", "content": "no"}),
+                ("Bash", {"command": "echo forbidden > blocked"}),
+            ],
+            "writer-C": [("WriteFile", {"file_path": "independent", "content": "yes"})],
+            "retry-B": [("WriteFile", {"file_path": "allowed", "content": "once"})],
+        }
+        pos = counter[label] - 1
+        return (
+            delta(steps[label][pos])
+            if pos < len(steps[label])
+            else delta(content="done")
+        )
+
+    monkeypatch.setattr(mock, "response", model)
+    paths = []
+    for dir in (repo, alias, other):
+        s = client.post("/api/coding/sessions", json={"directory": str(dir)}).json()
+        paths.append("/api/coding/sessions/" + s["session_id"])
+    a, b, c = paths
+
+    def submit(path, prompt):
+        r = client.post(
+            path + "/turns", json={"submit_request_id": str(uuid4()), "text": prompt}
+        )
+        assert r.status_code == 202, r.text
+
+    submit(a, "writer-A")
+    try:
+        deadline = time.monotonic() + 10
+        while not (repo / "started").exists() and time.monotonic() < deadline:
+            time.sleep(0.03)
+        assert (repo / "started").exists()
+        submit(b, "reader-B")
+        submit(c, "writer-C")
+        busy = wait_view(client, b, lambda v: v["turns"][0]["ended"])
+        wait_view(client, c, lambda v: v["turns"][0]["ended"])
+        results = [e["payload"] for e in busy["events"] if e["kind"] == "tool_result"]
+        assert (
+            len(results) == 3
+            and not results[0]["is_error"]
+            and all(r["is_error"] for r in results[1:])
+        )
+        conflicts = [
+            e["payload"]["holder_session_id"]
+            for e in busy["events"]
+            if e["kind"] == "write_conflict"
+        ]
+        assert conflicts == [a.rsplit("/", 1)[1]] * 2
+        assert (
+            not (repo / "blocked").exists()
+            and (other / "independent").read_text() == "yes"
+        )
+    finally:
+        (repo / "release").touch()
+    wait_view(client, a, lambda v: v["turns"][0]["ended"])
+    submit(b, "retry-B")
+    wait_view(client, b, lambda v: len(v["turns"]) == 2 and v["turns"][-1]["ended"])
+    assert (repo / "allowed").read_text() == "once"
+
+
+def test_git_evidence_and_mixed_edits(configured, monkeypatch):
+    import json
+    import sys
+
+    from webdemo import mock
+
+    if sys.platform != "darwin":
+        pytest.skip("requires the macOS command sandbox")
+    client, repo, _store, config = configured
+    doc = json.loads(config.read_text())
+    doc["permission_mode"] = "bypassPermissions"
+    config.write_text(json.dumps(doc))
+    (repo / "obsolete.txt").write_text("remove me\n")
+    git(repo, "add", "obsolete.txt")
+    git(
+        repo,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@invalid",
+        "commit",
+        "-qm",
+        "obsolete",
+    )
+    (repo / "test.txt").write_text("index text\n")
+    git(repo, "add", "test.txt")
+    (repo / "test.txt").write_text("working text\n")
+    steps = iter(
+        [
+            delta(("ReadFile", {"file_path": "test.txt"})),
+            delta(
+                (
+                    "EditFile",
+                    {
+                        "file_path": "test.txt",
+                        "old_string": "working",
+                        "new_string": "edited",
+                    },
+                )
+            ),
+            delta(
+                ("WriteFile", {"file_path": "new.txt", "content": "untracked needle\n"})
+            ),
+            delta(
+                (
+                    "Bash",
+                    {
+                        "command": "python3 -c \"from pathlib import Path; Path('obsolete.txt').unlink()\""
+                    },
+                )
+            ),
+        ]
+    )
+
+    def model(req):
+        response = next(steps, None)
+        if response:
+            return response
+        (repo / "test.txt").write_text("edited text\nexternal text\n")
+        return delta(content="finished")
+
+    monkeypatch.setattr(mock, "response", model)
+    sid = client.post("/api/coding/sessions", json={"directory": str(repo)}).json()[
+        "session_id"
+    ]
+    path = "/api/coding/sessions/" + sid
+    client.post(
+        path + "/turns", json={"submit_request_id": str(uuid4()), "text": "git changes"}
+    ).raise_for_status()
+    v = wait_view(client, path, lambda v: v["turns"][0]["ended"])
+    assert v["turns"][0]["state"] == "completed"
+    changes = {r["path"]: r["status"] for r in client.get(path + "/diff").json()}
+    actual = {
+        line[3:]: line[:2]
+        for line in git(repo, "status", "--short").stdout.decode().splitlines()
+    }
+    assert (
+        changes == actual == {"test.txt": "MM", "obsolete.txt": " D", "new.txt": "??"}
+    )
+    patch = client.get(path + "/diff", params={"path": "test.txt"}).json()[0]
+    for key, flags in [("staged", ["--cached"]), ("working", [])]:
+        native = (
+            git(repo, "diff", *flags, "--", "test.txt")
+            .stdout.decode()
+            .split("@@", 1)[1]
+        )
+        assert patch[key].split("@@", 1)[1] == native
+    assert client.get(
+        path + "/files", params={"query": "needle", "content": "true"}
+    ).json() == ["new.txt"]
+    assert (
+        client.get(path + "/file", params={"path": "new.txt"})
+        .json()["content"]
+        .encode()
+        == (repo / "new.txt").read_bytes()
+    )
+    summary = next(e["payload"] for e in v["events"] if e["kind"] == "summary")
+    attribution = {c["path"]: c["uncertain"] for c in summary["changes"]}
+    assert attribution == {"test.txt": True, "obsolete.txt": True, "new.txt": False}
+    calls = {e["payload"]["call_id"] for e in v["events"] if e["kind"] == "tool_call"}
+    assert all(c["call_id"] in calls for c in summary["changes"])

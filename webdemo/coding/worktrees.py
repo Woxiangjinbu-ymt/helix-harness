@@ -39,6 +39,7 @@ def git(directory, *args, check=True):
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_TERMINAL_PROMPT": "0",
         },
+        check=False,
         capture_output=True,
         timeout=20,
     )
@@ -210,7 +211,7 @@ class Worktree:
             for record in git(self.root, "ls-tree", "-rz", "HEAD").stdout.split(b"\0"):
                 if record:
                     meta, path = record.split(b"\t", 1)
-                    mode, kind, oid = meta.decode().split()
+                    mode, _kind, oid = meta.decode().split()
                     head[os.fsdecode(path)] = (mode, oid, "0")
         names = set(self.paths()) | set(head)
         result = []
@@ -274,7 +275,7 @@ class Worktree:
                         raise ValueError("文件过大，无法预览差异")
                     return git(self.root, "cat-file", "blob", meta[1]).stdout
 
-                def diff(a, b):
+                def diff(a, b, name=name):
                     lines = lambda data: data.decode("utf-8", "replace").splitlines(
                         keepends=True
                     )

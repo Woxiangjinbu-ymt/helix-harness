@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import select
 import sys
 
 from .worktrees import PROJECT
@@ -53,7 +52,7 @@ def search_main():
     print(
         json.dumps(
             {
-                "output": "\\n".join(matches)[:READ_LIMIT] or "No matches found.",
+                "output": "\n".join(matches)[:READ_LIMIT] or "No matches found.",
                 "is_error": False,
                 "truncated": size >= READ_LIMIT or len(matches) >= 1000,
             }
@@ -92,7 +91,7 @@ async def search(tree, cwd, tool, args):
         output, _ = await asyncio.wait_for(
             proc.communicate(
                 json.dumps(
-                    dict(tree=asdict(tree), cwd=cwd, tool=tool, args=args)
+                    {"tree": asdict(tree), "cwd": cwd, "tool": tool, "args": args}
                 ).encode()
             ),
             20,
@@ -144,42 +143,61 @@ async def send(stream, message):
 
 
 class Channel:
+    """多个只读调用可同时等待；每个回应按实例内请求序号交给原调用。"""
+
     def __init__(self, instance, reader, writer):
         self.instance, self.reader, self.writer = instance, reader, writer
-        self.serial = asyncio.Lock()
         self.seq = 0
+        self.pending = {}
+        self.read_task = None
+
+    async def receive(self):
+        try:
+            while self.pending:
+                line = await asyncio.to_thread(self.reader.readline, MAX_FRAME)
+                if not line:
+                    raise ConnectionError("会话管理器已关闭")
+                reply = json.loads(line)
+                future = self.pending.pop(reply["seq"], None)
+                if future is None:
+                    if reply["seq"] == 1:
+                        continue
+                    raise ConnectionError("无效的执行应答")
+                future.set_result(reply)
+        except Exception as exc:  # noqa: BLE001 — 通知所有正在等待的调用
+            for future in self.pending.values():
+                if not future.done():
+                    future.set_exception(exc)
+            self.pending.clear()
 
     async def request(self, kind, **payload):
-        async with self.serial:
-            self.seq += 1
-            message = dict(
-                instance=self.instance, seq=self.seq, kind=kind, payload=payload
-            )
-            data = json.dumps(message, ensure_ascii=False).encode() + b"\n"
-            if len(data) > MAX_FRAME:
-                raise ValueError("会话消息过大")
-            self.writer.write(data)
-            self.writer.flush()
-            if kind == "ready":
-                ready, _, _ = await asyncio.to_thread(
-                    select.select, [self.reader], [], [], 2
-                )
-                if not ready:
-                    self.writer.write(data)
-                    self.writer.flush()
-            while True:
-                reply = await asyncio.to_thread(self.reader.readline, MAX_FRAME)
-                if not reply:
-                    raise ConnectionError("会话管理器已关闭")
-                response = json.loads(reply)
-                if (
-                    response.get("seq") == self.seq
-                    or response.get("seq") != 1
-                    or self.seq == 1
-                ):
-                    break
-            if response.get("seq") != self.seq:
-                raise ConnectionError("无效的执行应答")
-            if "error" in response:
-                raise ValueError(response["error"])
-            return response["result"]
+        self.seq += 1
+        seq = self.seq
+        data = (
+            json.dumps(
+                {
+                    "instance": self.instance,
+                    "seq": seq,
+                    "kind": kind,
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+            ).encode()
+            + b"\n"
+        )
+        if len(data) > MAX_FRAME:
+            raise ValueError("会话消息过大")
+        self.writer.write(data)
+        self.writer.flush()
+        future = self.pending[seq] = asyncio.get_running_loop().create_future()
+        if self.read_task is None or self.read_task.done():
+            self.read_task = asyncio.create_task(self.receive())
+        if kind == "ready":
+            done, _ = await asyncio.wait([future], timeout=2)
+            if not done:
+                self.writer.write(data)
+                self.writer.flush()
+        response = await future
+        if "error" in response:
+            raise ValueError(response["error"])
+        return response["result"]

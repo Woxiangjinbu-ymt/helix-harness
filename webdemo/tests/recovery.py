@@ -284,8 +284,10 @@ def baseline(target, create):
             if before != result["archive_files"]:
                 raise ValueError("读取改变了归档")
             (staging / "baseline.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
-            (staging / "baseline.json").chmod(0o400)
+            for entry in staging.rglob("*"):
+                entry.chmod(0o500 if entry.is_dir() else 0o400)
             staging.rename(target)
+            target.chmod(0o500)
     else:
         expected = json.loads((target / "baseline.json").read_text())
         actual = observe_baseline(target)

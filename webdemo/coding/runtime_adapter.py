@@ -258,8 +258,12 @@ async def run(data, channel):
             )
             decision = ans["decision"]
             if decision == "allow_always":
-                await channel.request("save_rule", call_id=call, action_id=uid())
-                decision = "allow"
+                try:
+                    await channel.request("save_rule", call_id=call, action_id=uid())
+                    decision = "allow"
+                except ValueError as exc:
+                    decision = "deny"
+                    ans["feedback"] = str(exc)
             ev.future.set_result(
                 native.PermissionReply(
                     native.PermissionResponse(decision), ans["feedback"]
@@ -305,7 +309,7 @@ def main():
             await run(first, channel)
         except (BrokenPipeError, ConnectionError):
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — 向管理器报告原生执行失败
             await channel.request(
                 "finish", state="failed", reason=f"{type(exc).__name__}: {exc}"
             )
