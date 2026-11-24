@@ -2,6 +2,7 @@
 
 import json
 import os
+
 import httpx
 
 
@@ -65,5 +66,57 @@ def main():
         )
 
 
+def coding():
+    from webdemo.tests.coding_fixture import finished, post, service, turn
+
+    def model(req, delta):
+        text = str(req["messages"])
+        if "private-working-tree-marker" in text:
+            return delta(content="private-working-tree-marker")
+        return delta(("ReadFile", {"file_path": "unstaged.txt"}))
+
+    with service("coding-independent", model) as (work, repo, url, c):
+        (repo / "unstaged.txt").write_text("private-working-tree-marker")
+        sid = post(c, "sessions", directory=str(repo))["session_id"]
+        path = "sessions/" + sid
+        for prompt in (
+            "Read the uncommitted file.",
+            "Repeat its content from history.",
+        ):
+            t = turn(c, path, prompt)
+            view = finished(c, path, t["turn_id"])
+            assert view["turns"][-1]["state"] == "completed"
+        assert (
+            c.post(
+                "sessions",
+                headers={"Origin": "https://untrusted.invalid"},
+                json={"directory": str(repo)},
+            ).status_code
+            == 403
+        )
+        assert (
+            httpx.post(
+                url + "/api/coding/sessions", json={"directory": str(repo)}
+            ).status_code
+            == 403
+        )
+        assert not (work / "missing").exists()
+        calls = [e for e in view["events"] if e["kind"] == "tool_result"]
+        assert (
+            len(calls) == 1
+            and "private-working-tree-marker" in calls[0]["payload"]["output"]
+        )
+        (work / "smoke.json").write_text(
+            json.dumps(
+                {"session": sid, "call": calls[0], "turns": view["turns"]}, indent=2
+            )
+        )
+        print("PASS independent Coding", sid)
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    coding() if "--coding" in sys.argv else main()

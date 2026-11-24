@@ -213,10 +213,10 @@ def test_live_runtime_authorization_and_reopen(configured, monkeypatch):
     real_file_action = actions.file_action
     second_returned = asyncio.Event()
 
-    async def delayed_read(tree, cwd, tool, args, seen, scratch):
+    async def delayed_read(tree, cwd, tool, args, seen, scratch, **kwargs):
         if tool == "ReadFile" and args["file_path"] == "test.txt":
             await asyncio.wait_for(second_returned.wait(), 4)
-        result = await real_file_action(tree, cwd, tool, args, seen, scratch)
+        result = await real_file_action(tree, cwd, tool, args, seen, scratch, **kwargs)
         if tool == "ReadFile" and args["file_path"] == "missing.txt":
             second_returned.set()
         return result
@@ -1007,3 +1007,456 @@ def test_git_evidence_and_mixed_edits(configured, monkeypatch):
     assert attribution == {"test.txt": True, "obsolete.txt": True, "new.txt": False}
     calls = {e["payload"]["call_id"] for e in v["events"] if e["kind"] == "tool_call"}
     assert all(c["call_id"] in calls for c in summary["changes"])
+
+
+def test_cancel_competes_with_finish_and_prelaunch(local):
+    from webdemo.coding.manager import Manager
+
+    repo, store = local
+    sid = store.create_session(str(repo), "")["session_id"]
+    manager = Manager(store)
+    for index in range(12):
+        row, _ = store.submit(sid, uuid4(), "race", lambda _: {"model": "race"})
+        tid = row["turn_id"]
+        request = uuid4()
+        if not index:
+            receipt = manager.cancel(sid, tid, request)
+            assert receipt["state"] == "cancelling"
+            with pytest.raises(Conflict):
+                manager.start_data(sid, tid)
+        with ThreadPoolExecutor(2) as pool:
+            a = pool.submit(manager.cancel, sid, tid, request)
+            b = pool.submit(manager.finalize, sid, tid, "completed", None)
+            reply = a.result()
+            b.result()
+        assert manager.cancel(sid, tid, request) == reply
+        with store.connection() as db:
+            events = store.events(db, sid)
+            states = [
+                e["payload"]["state"]
+                for e in events
+                if e["turn_id"] == tid and e["kind"] == "state"
+            ]
+            assert states in (
+                ["accepted", "completed"],
+                ["accepted", "cancelling", "cancelled"],
+            )
+            assert (
+                db.execute(
+                    "SELECT count(*) FROM actions WHERE turn=?", (tid,)
+                ).fetchone()[0]
+                == 0
+            )
+
+
+def test_cancel_pending_permission_is_scoped(configured, monkeypatch):
+    from webdemo import mock
+    from webdemo.tests.coding_fixture import allow, finished, post, turn, wait_for
+
+    client, repo, _store, _ = configured
+
+    def model(req):
+        if any(m["role"] == "tool" for m in req["messages"]):
+            return delta(content="done")
+        return delta(("WriteFile", {"file_path": "only-once.txt", "content": "one"}))
+
+    monkeypatch.setattr(mock, "response", model)
+    paths = [
+        "/api/coding/sessions/"
+        + post(client, "/api/coding/sessions", directory=str(repo))["session_id"]
+        for _ in range(2)
+    ]
+    turns = [turn(client, p, "write")["turn_id"] for p in paths]
+    views = [wait_for(client, p, lambda v: v["permissions"]) for p in paths]
+    p = views[0]["permissions"][0]
+    req = {"request_id": str(uuid4())}
+    cancel = paths[0] + "/turns/" + turns[0] + "/cancel"
+    first = client.post(cancel, json=req).json()
+    assert first == client.post(cancel, json=req).json()
+    assert finished(client, paths[0], turns[0])["turns"][-1]["state"] == "cancelled"
+    assert (
+        client.post(
+            paths[0]
+            + "/turns/"
+            + turns[0]
+            + "/permissions/"
+            + p["permission_id"]
+            + "/reply",
+            json={"request_id": str(uuid4()), "decision": "allow"},
+        ).status_code
+        == 409
+    )
+    assert not (repo / "only-once.txt").exists()
+    allow(client, paths[1], views[1])
+    assert finished(client, paths[1], turns[1])["turns"][-1]["state"] == "completed"
+    assert (repo / "only-once.txt").read_text() == "one"
+
+
+def test_provider_revision_revoke_and_demo(configured, monkeypatch):
+    import json
+
+    from webdemo import mock
+    from webdemo.tests.coding_fixture import allow, finished, post, turn, wait_for
+
+    client, repo, _store, config = configured
+    native = json.loads(config.read_text())["providers"][0]
+    base = "/api/coding"
+    path = base + "/profiles"
+    form = {
+        "provider": "my-local",
+        "protocol": "openai-compat",
+        "endpoint": native["base_url"],
+        "model": "original",
+        "api_key": "local-demo",
+    }
+    first = post(client, path, **form)
+    other = post(client, path, **dict(form, model="separate"))
+    assert first["profile_id"] != other["profile_id"]
+    assert "local-demo" not in client.get(path).text
+    assert (
+        "local-demo" not in client.post(path, json=dict(form, extra="local-demo")).text
+    )
+    sid = post(
+        client, base + "/sessions", directory=str(repo), profile_id=first["profile_id"]
+    )["session_id"]
+    session = base + "/sessions/" + sid
+    seen = []
+
+    def model(req):
+        seen.append(req["model"])
+        if req["messages"][-1]["role"] == "tool" or "simple" in str(
+            req["messages"][-1]
+        ):
+            return delta(content="ok")
+        return delta(("Bash", {"command": "printf accepted"}))
+
+    monkeypatch.setattr(mock, "response", model)
+    t1 = turn(client, session, "call command")
+    pending = wait_for(client, session, lambda v: v["permissions"])
+    revision = post(client, path, **dict(form, model="updated", **first))
+    assert revision["revision"] == 2
+    assert client.post(path, json=dict(form, **first)).status_code == 409
+    allow(client, session, pending)
+    assert finished(client, session, t1["turn_id"])["turns"][-1]["state"] == "completed"
+    assert seen == ["original", "original"]
+    t2 = turn(client, session, "simple")
+    assert finished(client, session, t2["turn_id"])["turns"][-1]["state"] == "completed"
+    assert seen[-1] == "updated" and t1["snapshot_id"] != t2["snapshot_id"]
+    t3 = turn(client, session, "call command again")
+    v = wait_for(client, session, lambda v: v["permissions"])
+    post(client, path + "/" + first["profile_id"] + "/revoke")
+    allow(client, session, v)
+    v = finished(client, session, t3["turn_id"])
+    assert v["turns"][-1]["state"] == "failed"
+    assert not any(
+        e["kind"] == "process_started" and e["turn_id"] == t3["turn_id"]
+        for e in v["events"]
+    )
+    post(client, session + "/settings", profile_id="demo:local")
+    demo = turn(client, session, "simple demo")
+    v = finished(client, session, demo["turn_id"])
+    assert "local-demo" not in json.dumps(v)
+    assert any(e["payload"].get("source") == "demo" for e in v["events"])
+    assert any(
+        "local demonstration" in e["payload"].get("text", "") for e in v["events"]
+    )
+
+
+def test_storage_failure_stops_dispatch_and_keeps_receipt(configured, monkeypatch):
+    from webdemo import mock
+    from webdemo.tests.coding_fixture import finished, post, wait_for
+
+    client, repo, store, _ = configured
+    monkeypatch.setattr(
+        mock,
+        "response",
+        lambda _: delta(("Bash", {"command": "printf x >> count.txt"})),
+    )
+    sid = post(client, "/api/coding/sessions", directory=str(repo))["session_id"]
+    path = "/api/coding/sessions/" + sid
+    data = {"submit_request_id": str(uuid4()), "text": "write once"}
+    receipt = post(client, path + "/turns", **data)
+    v = wait_for(client, path, lambda v: v["permissions"])
+    with store.connection(True) as db:
+        db.execute(
+            "CREATE TRIGGER reject_action BEFORE INSERT ON actions BEGIN SELECT RAISE(ABORT,'storage unavailable'); END"
+        )
+    from webdemo.tests.coding_fixture import allow
+
+    allow(client, path, v)
+    final = finished(client, path, receipt["turn_id"])
+    assert final["turns"][-1]["state"] == "failed"
+    assert any(e["payload"].get("error_type") == "storage" for e in final["events"])
+    assert not (repo / "count.txt").exists()
+    with store.connection(True) as db:
+        db.execute("DROP TRIGGER reject_action")
+    assert post(client, path + "/turns", **data) == receipt
+    assert len(client.get(path + "/view").json()["turns"]) == 1
+
+
+def test_session_bound_extensions_and_disconnect(configured, monkeypatch):
+    import json
+    import shutil
+    import sys
+    from pathlib import Path
+
+    from mewcode.mcp.tool_wrapper import build_mcp_tool_name
+    from webdemo import mock
+    from webdemo.tests.coding_fixture import allow, finished, post, turn, wait_for
+
+    client, repo, _store, config = configured
+    src = Path(__file__).with_name("mcp_stdio_fixture.py")
+    shutil.copyfile(src, repo / "stamp.py")
+    skill = repo / ".mewcode/skills/skill-proof.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        "---\nname: skill-proof\ndescription: testing fixture\n---\nSKILL-BODY-819"
+    )
+    (skill.parent / "bad.md").write_text("---\n: [invalid YAML\n---\n")
+    doc = json.loads(config.read_text())
+    doc["mcp_servers"] = [
+        {
+            "name": "fixture",
+            "command": str(Path(sys.base_prefix) / "bin/python3"),
+            "args": ["-B", "stamp.py"],
+        },
+        {"name": "missing", "command": "/missing/fixture"},
+    ]
+    doc["hooks"] = [
+        {
+            "id": "audit",
+            "event": "post_tool_use",
+            "if": "tool == ReadFile",
+            "action": {"type": "command", "command": "printf HOOK-725", "timeout": 8},
+        }
+    ]
+    config.write_text(json.dumps(doc))
+    base = "/api/coding/sessions"
+    a, b = [
+        base + "/" + post(client, base, directory=str(repo))["session_id"]
+        for _ in range(2)
+    ]
+    options = client.get(a + "/settings").json()
+    assert "skill-proof" in options["catalog"]["skills"] and options["errors"]
+    name = build_mcp_tool_name("fixture", "stamp")
+    probe = client.post(a + "/mcp/fixture/connect", json={})
+    assert probe.is_success, probe.text
+    assert probe.json()["tools"] == [name] and not (repo / "mcp-count.txt").exists()
+    assert client.post(a + "/mcp/missing/connect", json={}).status_code == 422
+    post(
+        client,
+        a + "/settings",
+        skills=["skill-proof"],
+        mcp=["fixture"],
+        hooks=["audit"],
+    )
+    post(client, b + "/settings", skills=[], mcp=[], hooks=[])
+    observed = []
+
+    def model(req):
+        tools = [x["function"]["name"] for x in req["tools"]]
+        marked = "SKILL-BODY-819" in str(req["messages"])
+        observed.append((name in tools, marked))
+        if name in tools and not any(x["role"] == "tool" for x in req["messages"]):
+            return delta((name, {}))
+        if req["messages"][-1]["role"] == "user":
+            return delta(("ReadFile", {"file_path": "test.txt"}))
+        return delta(content="done")
+
+    monkeypatch.setattr(mock, "response", model)
+    t = turn(client, a, "use stamp")
+    pending = wait_for(client, a, lambda v: v["permissions"] or v["turns"][-1]["ended"])
+    assert pending["permissions"], pending["events"][-6:]
+    allow(client, a, pending)
+    v = finished(client, a, t["turn_id"])
+    assert (repo / "mcp-count.txt").read_text() == "x" and "MCP-SESSION-MARK-42" in str(
+        v["events"]
+    )
+    assert all(x == (True, True) for x in observed)
+    # 独立会话无扩展。原会话显式断开 MCP 后保留自己的 Hook。
+    t = turn(client, b, "read my file")
+    other = finished(client, b, t["turn_id"])
+    assert observed[-1] == (False, False) and "HOOK-725" not in str(other["events"])
+    post(client, a + "/settings", skills=[], mcp=[], hooks=["audit"])
+    t = turn(client, a, "read my file")
+    pending = wait_for(client, a, lambda v: v["permissions"] or v["turns"][-1]["ended"])
+    assert pending["permissions"]
+    allow(client, a, pending)
+    done = finished(client, a, t["turn_id"])
+    events = [e for e in done["events"] if e["turn_id"] == t["turn_id"]]
+    hook = next(
+        e["payload"]
+        for e in events
+        if e["kind"] == "tool_call" and e["payload"].get("hook_id") == "audit"
+    )
+    assert any(
+        e["payload"].get("call_id") == hook["call_id"]
+        and e["kind"] == "tool_result"
+        and "HOOK-725" in e["payload"]["output"]
+        for e in events
+    )
+    assert (
+        observed[-1] == (False, False) and (repo / "mcp-count.txt").read_text() == "x"
+    )
+
+
+def test_cancel_drains_only_owned_command(configured, monkeypatch, tmp_path):
+    import asyncio
+    import json
+    import time
+    from threading import Event
+
+    from webdemo import mock
+    from webdemo.coding import actions
+    from webdemo.tests.coding_fixture import finished, post, turn
+
+    client, repo, store, config = configured
+    raw = json.loads(config.read_text())
+    raw["permission_mode"] = "bypassPermissions"
+    config.write_text(json.dumps(raw))
+    other = tmp_path / "another"
+    other.mkdir()
+    git(other, "init", "-q")
+    (other / "tick.py").write_text(
+        "import time\nfrom pathlib import Path\nwhile True:\n Path('tick').write_text(str(time.time()))\n time.sleep(.15)\n"
+    )
+
+    def model(req):
+        messages = req["messages"]
+        if messages[-1]["role"] == "tool":
+            return delta(content="finished")
+        user = next(
+            m["content"]
+            for m in reversed(messages)
+            if m["role"] == "user"
+            and m["content"] in ("owner", "parallel", "competitor", "handoff")
+        )
+        if user in ("competitor", "handoff"):
+            return delta(("WriteFile", {"file_path": user + ".txt", "content": "x"}))
+        return delta(
+            (
+                "Bash",
+                {
+                    "command": "printf yes > prior.txt; sleep 600"
+                    if user == "owner"
+                    else "python3 tick.py",
+                    "timeout": 700,
+                },
+            )
+        )
+
+    monkeypatch.setattr(mock, "response", model)
+    proven, release = Event(), Event()
+    original = actions.run_shell
+
+    async def delayed_proof(tree, cwd, command, timeout, state, notify, **kwargs):
+        async def append(kind, value):
+            if kind == "process_exited" and "prior.txt" in command:
+                proven.set()
+                await asyncio.to_thread(release.wait, 12)
+            await notify(kind, value)
+
+        return await original(tree, cwd, command, timeout, state, append, **kwargs)
+
+    monkeypatch.setattr(actions, "run_shell", delayed_proof)
+    base = "/api/coding/sessions"
+    owner, competitor, parallel = [
+        base + "/" + post(client, base, directory=str(d))["session_id"]
+        for d in (repo, repo, other)
+    ]
+    a = turn(client, owner, "owner")["turn_id"]
+    c = turn(client, parallel, "parallel")["turn_id"]
+    for target in (repo / "prior.txt", other / "tick"):
+        end = time.monotonic() + 15
+        while not target.is_file() and time.monotonic() < end:
+            time.sleep(0.05)
+        assert target.is_file()
+    try:
+        post(client, owner + "/turns/" + a + "/cancel", request_id=str(uuid4()))
+        assert proven.wait(6)
+        wait_view(
+            client,
+            owner,
+            lambda v: any(e["source_id"] == "delayed-cleanup" for e in v["events"]),
+        )
+        assert client.get(owner + "/view").json()["turns"][-1]["state"] == "cancelling"
+        assert (
+            client.get(competitor + "/file", params={"path": "prior.txt"}).json()[
+                "content"
+            ]
+            == "yes"
+        )
+        with store.connection() as db:
+            assert (
+                db.execute("SELECT state FROM leases WHERE turn=?", (a,)).fetchone()[0]
+                == "draining"
+            )
+        tick = (other / "tick").read_text()
+        blocked = finished(
+            client, competitor, turn(client, competitor, "competitor")["turn_id"]
+        )
+        assert (
+            any(e["kind"] == "write_conflict" for e in blocked["events"])
+            and not (repo / "competitor.txt").exists()
+        )
+        assert (other / "tick").read_text() != tick
+    finally:
+        release.set()
+        post(client, parallel + "/turns/" + c + "/cancel", request_id=str(uuid4()))
+    assert finished(client, parallel, c)["turns"][-1]["state"] == "cancelled"
+    assert finished(client, owner, a)["turns"][-1]["state"] == "cancelled"
+    finished(client, competitor, turn(client, competitor, "handoff")["turn_id"])
+    assert (repo / "handoff.txt").read_text() == "x"
+
+
+def test_skills_exclude_external_and_linked_sources(local, tmp_path):
+    import os
+
+    repo, _ = local
+    root = repo / ".mewcode/skills"
+    root.mkdir(parents=True)
+    outside = tmp_path / "sentinel.md"
+    outside.write_text(
+        "---\nname: private-note\ndescription: should stay private\n---\nPROTECTED-CONTENT-942"
+    )
+    (root / "linked.md").symlink_to(outside)
+    os.link(outside, root / "hard.md")
+    catalog = profiles.extension_catalog(repo)
+    assert "PROTECTED-CONTENT-942" not in str(catalog)
+    assert any("hard.md" in e for e in catalog["errors"]) and any(
+        "linked.md" in e for e in catalog["errors"]
+    )
+
+
+def test_credentials_excluded_from_shell_test_and_transcript(configured, monkeypatch):
+    import json
+
+    from webdemo import mock
+    from webdemo.tests.coding_fixture import finished, post, turn
+
+    client, repo, store, cfg = configured
+    raw = json.loads(cfg.read_text())
+    raw["permission_mode"] = "bypassPermissions"
+    cfg.write_text(json.dumps(raw))
+    (repo / "test_env.py").write_text(
+        "import os,unittest\nclass Environment(unittest.TestCase):\n def test_no_model_key(self):self.assertNotIn('MODEL_CREDENTIAL_TEST_MARKER',os.environ)\n"
+    )
+    command = 'test -z "${MODEL_CREDENTIAL_TEST_MARKER+x}" && python3 -m unittest'
+    replies = iter([delta(("Bash", {"command": command})), delta(content="local-demo")])
+    monkeypatch.setattr(mock, "response", lambda _: next(replies))
+    base = "/api/coding/sessions"
+    sid = post(client, base, directory=str(repo))["session_id"]
+    path = base + "/" + sid
+    tid = turn(client, path, "check isolated shell and test")["turn_id"]
+    v = finished(client, path, tid)
+    assert v["turns"][-1]["state"] == "completed"
+    assert any(
+        e["kind"] == "process_exited" and e["payload"]["exit_code"] == 0
+        for e in v["events"]
+    )
+    assert any("Ran 1 test" in e["payload"].get("text", "") for e in v["events"])
+    assert "[redacted]" in str(v["events"]) and "local-demo" not in str(v)
+    assert (
+        "local-demo"
+        not in (store.root / "sessions" / sid / "history.jsonl").read_text()
+    )

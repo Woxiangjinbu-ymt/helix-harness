@@ -2,8 +2,10 @@
 
 import argparse
 import os
+from datetime import UTC
 from pathlib import Path
-from playwright.sync_api import sync_playwright, expect
+
+from playwright.sync_api import expect, sync_playwright
 
 URL = os.getenv("RSI_UI", "http://127.0.0.1:5173")
 
@@ -494,6 +496,650 @@ def coding_legacy(page):
     print("Legacy URL verified", job, flush=True)
 
 
+def coding_long(page):
+    import json
+    import sys
+    import time
+    from datetime import datetime
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from webdemo.tests.coding_fixture import service
+
+    def respond(req, delta):
+        if "handoff-check" in str(req["messages"]):
+            if any(m["role"] == "tool" for m in req["messages"]):
+                return delta(content="done")
+            return delta(("WriteFile", {"file_path": "handoff.txt", "content": "ok"}))
+        return delta(("Bash", {"command": "python3 -u long.py", "timeout": 2400}))
+
+    with service("coding-long", respond) as (work, repo, url, client):
+        (repo / "long.py").write_text(
+            "import os,time,subprocess,sys\nfrom pathlib import Path\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(3000)'])\nPath('pids.txt').write_text(str(os.getpid())+' '+str(child.pid))\nprint('LONG-START',os.getpid(),flush=True)\ntime.sleep(9)\nprint('OFFLINE-OUTPUT',flush=True)\nfor i in range(40): print(str(i)+'x'*60000,flush=True)\nwhile True:\n Path('progress.txt').write_text(str(time.time()))\n time.sleep(3)\n"
+        )
+        page.goto(url)
+        page.get_by_label("Git working directory").fill(str(repo))
+        page.get_by_label("Message", exact=True).fill("long-running acceptance")
+        page.get_by_role("button", name="Send", exact=True).click()
+        page.wait_for_url("**/#coding/*")
+        original = page.url
+        sid = original.rsplit("/", 1)[1]
+        path = "sessions/" + sid
+        page.get_by_role("button", name="Allow once", exact=True).click(timeout=30000)
+        until = time.monotonic() + 30
+        while time.monotonic() < until:
+            v = client.get(path + "/view").json()
+            if any(e["kind"] == "process_started" for e in v["events"]):
+                break
+            time.sleep(0.2)
+        start = v["turns"][0]
+        started = datetime.fromisoformat(start["started"])
+        mark = next(e for e in v["events"] if e["kind"] == "process_started")
+        other = client.post("sessions", json={"directory": str(repo)}).json()[
+            "session_id"
+        ]
+        ctx = page.context
+        page.goto(url + "/#coding/" + other)
+        expect(page.get_by_label("Message", exact=True)).to_be_visible()
+        for tab in list(ctx.pages):
+            tab.close()
+        assert not ctx.pages
+        evidence = {
+            "session_id": sid,
+            "turn_id": start["turn_id"],
+            "call_id": mark["payload"]["call_id"],
+            "started": started.isoformat(),
+            "pages_after_close": len(ctx.pages),
+            "closed": datetime.now(UTC).isoformat(),
+            "second_session": other,
+        }
+        (work / "long.json").write_text(json.dumps(evidence, indent=2))
+        print("Long task running", evidence, flush=True)
+        while (datetime.now(UTC) - started).total_seconds() < 1801:
+            time.sleep(
+                min(10, max(0.1, 1801 - (datetime.now(UTC) - started).total_seconds()))
+            )
+            assert not ctx.pages
+            client.get("health").raise_for_status()
+        assert (repo / "progress.txt").exists()
+        resumed = ctx.new_page()
+        resumed.goto(original)
+        expect(resumed.get_by_role("button", name="Cancel turn")).to_be_visible()
+        evidence["reopened"] = datetime.now(UTC).isoformat()
+        resumed.get_by_role("button", name="Terminal", exact=True).click()
+        expect(resumed.locator(".coding-panel")).to_contain_text("LONG-START")
+        expect(resumed.locator(".coding-panel")).to_contain_text("OFFLINE-OUTPUT")
+        resumed.get_by_label("Close panel").click()
+        resumed.get_by_role("button", name="Cancel turn").click()
+        expect(resumed.locator('[data-state="cancelled"]')).to_be_visible(timeout=60000)
+        v = client.get(path + "/view").json()
+        cancel = next(
+            e for e in v["events"] if e["payload"].get("state") == "cancelling"
+        )
+        evidence.update(
+            cancelled=cancel["recorded_at"],
+            elapsed=(
+                datetime.fromisoformat(cancel["recorded_at"]) - started
+            ).total_seconds(),
+            truncated=any(e["payload"].get("truncated") for e in v["events"]),
+            clean=any(e["kind"] == "process_exited" for e in v["events"]),
+            offline_output=any(
+                e["kind"] == "output"
+                and "OFFLINE-OUTPUT" in e["payload"].get("text", "")
+                and e["recorded_at"] > evidence["closed"]
+                for e in v["events"]
+            ),
+        )
+        assert evidence["elapsed"] >= 1800 and all(
+            evidence[k] for k in ("clean", "truncated", "offline_output")
+        ), evidence
+        import os
+
+        pids = [int(n) for n in (repo / "pids.txt").read_text().split()]
+        for pid in pids:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                pass
+            else:
+                raise AssertionError("command family survived: " + str(pid))
+        evidence["terminated_pids"] = pids
+        resumed.goto(url + "/#coding/" + other)
+        resumed.get_by_label("Message", exact=True).fill("handoff-check")
+        resumed.get_by_role("button", name="Send", exact=True).click()
+        resumed.get_by_role("button", name="Allow once", exact=True).click()
+        expect(resumed.locator('[data-state="completed"]')).to_be_visible(timeout=20000)
+        assert (repo / "handoff.txt").read_text() == "ok"
+        evidence["handoff"] = True
+        (work / "long.json").write_text(json.dumps(evidence, indent=2))
+        print("Long task verified", work, evidence["elapsed"], flush=True)
+
+
+def coding_real(page):
+    import json
+    import subprocess
+    import time
+
+    from webdemo.tests.coding_fixture import service
+
+    with service("coding-real") as (work, repo, url, client):
+        (repo / "maths.py").write_text("def add(a, b):\n    return a - b\n")
+        (repo / "test_maths.py").write_text(
+            "import unittest\nfrom maths import add\nclass Addition(unittest.TestCase):\n    def test_sum(self): self.assertEqual(add(3,2),5)\n"
+        )
+        subprocess.run(["git", "-C", repo, "add", "."], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                repo,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@invalid",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            check=True,
+        )
+        page.goto(url)
+        page.locator('input[name="directory"]').fill(str(repo))
+        page.locator("form.coding-start button").first.click()
+        page.wait_for_url("**/#coding/*")
+        original = page.url
+        path = "sessions/" + original.rsplit("/", 1)[1]
+        prompts = [
+            "工作目录已经就绪，禁止 cd 或串联命令。先通过 Bash 仅运行 python3 -m unittest，读 maths.py 后解释失败原因，记住实际值和期望值。本轮不要修改文件。",
+            "沿用刚才的诊断。先用 ReadFile 读取 maths.py，用 EditFile 修复，再通过 Bash 运行相同的 python3 -m unittest。请勿使用其他命令。",
+            "只根据前两轮记录回答：原来的 add(3,2) 实际值和期望值分别是多少？修复后测试结果如何？不要调用工具。",
+        ]
+        for index, prompt in enumerate(prompts):
+            if index == 2:
+                ctx = page.context
+                for tab in ctx.pages:
+                    tab.close()
+                page = ctx.new_page()
+                page.goto(original)
+                expect(page.locator('[data-state="completed"]')).to_have_count(2)
+            page.get_by_label("Message", exact=True).fill(prompt)
+            page.get_by_role("button", name="Send", exact=True).click()
+            handled = set()
+            end = time.monotonic() + 240
+            while time.monotonic() < end:
+                v = client.get(path + "/view").json()
+                for item in v["permissions"]:
+                    pid = item["permission_id"]
+                    if pid in handled:
+                        continue
+                    call = next(
+                        e["payload"]
+                        for e in v["events"]
+                        if e["kind"] == "tool_call"
+                        and e["payload"]["call_id"] == item["call_id"]
+                    )
+                    tool, args = call["tool"], call["args"]
+                    allow = (
+                        index < 2
+                        and tool == "Bash"
+                        and args["command"].strip()
+                        in ("python3 -m unittest", f"cd {repo} && python3 -m unittest")
+                    ) or (
+                        index == 1
+                        and tool in ("EditFile", "WriteFile")
+                        and (repo / args["file_path"]).resolve() == repo / "maths.py"
+                    )
+                    if not allow:
+                        page.locator('[data-permission="' + pid + '"]').get_by_label(
+                            "Feedback for the agent"
+                        ).fill("请仅运行 python3 -m unittest。工作目录已绑定到仓库。")
+                    page.locator('[data-permission="' + pid + '"]').get_by_role(
+                        "button", name="Allow once" if allow else "Deny", exact=True
+                    ).click()
+                    handled.add(pid)
+                if len(v["turns"]) > index and v["turns"][index]["ended"]:
+                    break
+                page.wait_for_timeout(200)
+            (work / "view.json").write_text(json.dumps(v, ensure_ascii=False))
+            assert (
+                len(v["turns"]) == index + 1 and v["turns"][-1]["state"] == "completed"
+            ), v["turns"]
+            print("Real turn", index + 1, v["turns"][-1]["turn_id"], flush=True)
+        exits = [
+            e["payload"]["exit_code"]
+            for e in v["events"]
+            if e["kind"] == "process_exited"
+        ]
+        assert exits == [1, 0], exits
+        reply = "".join(
+            e["payload"]["text"]
+            for e in v["events"]
+            if e["kind"] == "text" and e["turn_id"] == v["turns"][-1]["turn_id"]
+        )
+        assert (
+            "1" in reply
+            and "5" in reply
+            and any(word in reply.lower() for word in ("通过", "成功", "ok", "pass"))
+        )
+        patch = subprocess.check_output(["git", "-C", repo, "diff"], text=True)
+        (work / "fix.diff").write_text(patch)
+        assert "return a + b" in patch or "return a+b" in patch
+        result = subprocess.run(
+            ["python3", "-B", "-m", "unittest"],
+            cwd=repo,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        (work / "unittest.txt").write_text(result.stderr)
+        page.get_by_role("button", name="Changes", exact=True).click()
+        expect(page.locator(".coding-panel .diff")).to_contain_text("return")
+        assert all(
+            e["payload"].get("provider") not in ("controlled", "MewCode Demo")
+            for e in v["events"]
+        )
+        print("Real browser verified", original, flush=True)
+
+
+def coding_stability(page):
+    import json
+
+    from webdemo.tests.coding_fixture import (
+        allow,
+        finished,
+        post,
+        service,
+        turn,
+        wait_for,
+    )
+
+    def respond(req, delta):
+        last = max(
+            (
+                i
+                for i, m in enumerate(req["messages"])
+                if isinstance(m.get("content"), str)
+                and m["content"].startswith("write-proof-")
+            ),
+            default=-1,
+        )
+        if last >= 0 and not any(
+            m["role"] == "tool" for m in req["messages"][last + 1 :]
+        ):
+            return delta(
+                (
+                    "WriteFile",
+                    {
+                        "file_path": req["messages"][last]["content"] + ".txt",
+                        "content": "recorded once",
+                    },
+                )
+            )
+        return delta(content="stable answer")
+
+    with service("coding-reconnect", respond) as (work, repo, url, c):
+        sid = post(c, "sessions", directory=str(repo))["session_id"]
+        path = "sessions/" + sid
+        ctx = page.context
+        ctx.add_init_script("""window.feedCursors=[];window.applied=[];window.EventSource=class extends EventSource{
+          constructor(url){if(window.forceReset){url=url.replace(/after=.*/,"after=invalid");window.forceReset=false}super(url);window.feedCursors.push(url);window.dropFeed=()=>{this.close();this.dispatchEvent(new Event("error"))}}
+          set onmessage(fn){super.onmessage=e=>{
+            if(window.damage){window.damage=false;fn({data:"{",lastEventId:e.lastEventId});return}
+            window.applied.push(e.lastEventId);fn(e)
+          }}
+        }""")
+        page.goto(url + "/#coding/" + sid)
+        page.wait_for_function("window.feedCursors.length>0")
+        receipt = turn(c, path, "write-proof-one")
+        expect(
+            page.get_by_role("button", name="Allow once", exact=True)
+        ).to_be_visible()
+        pending = wait_for(c, path, lambda v: v["permissions"])
+        page.evaluate("window.dropFeed()")
+        page.wait_for_function("window.feedCursors.length>=2")
+        expect(page.get_by_role("button", name="Allow once", exact=True)).to_have_count(
+            1
+        )
+        # 同一轮再次断开，服务端在离线期间处理已有授权并完成轮次。
+        ctx.set_offline(True)
+        page.evaluate("window.dropFeed()")
+        allow(c, path, pending)
+        finished(c, path, receipt["turn_id"])
+        ctx.set_offline(False)
+        expect(page.locator('[data-state="completed"]')).to_have_count(1, timeout=15000)
+        page.evaluate("window.damage=true")
+        receipt = turn(c, path, "ordinary second")
+        v = finished(c, path, receipt["turn_id"])
+        expect(page.locator('[data-state="completed"]')).to_have_count(2)
+        want = [sid + "/" + str(e["seq"]) for e in v["events"]]
+        page.wait_for_function("last=>window.applied.includes(last)", arg=want[-1])
+        observed = page.evaluate("window.applied")
+        assert observed == want, (observed, want)
+        assert (repo / "write-proof-one.txt").read_text() == "recorded once"
+        expect(page.locator("[data-call]")).to_have_count(1)
+        with page.expect_response(lambda r: r.url.endswith("/view")):
+            page.evaluate("window.forceReset=true;window.dropFeed()")
+        expect(page.locator("[data-call]")).to_have_count(1)
+        second = ctx.new_page()
+        second.goto(page.url)
+        job = turn(c, path, "write-proof-cancel")
+        expect(
+            page.get_by_role("button", name="Allow once", exact=True)
+        ).to_be_visible()
+        second.get_by_role("button", name="Cancel turn").click()
+        expect(page.locator('[data-state="cancelled"]')).to_have_count(1)
+        second.reload()
+        expect(second.locator('[data-state="cancelled"]')).to_have_count(1)
+        assert not (repo / "write-proof-cancel.txt").exists()
+        post(c, path + "/settings", profile_id="demo:local")
+        again = turn(c, path, "continue after cancel")
+        assert finished(c, path, again["turn_id"])["turns"][-1]["state"] == "completed"
+        evidence = {
+            "session": sid,
+            "event_ids": want,
+            "applied": observed,
+            "connections": page.evaluate("window.feedCursors.length"),
+            "cancelled": job["turn_id"],
+            "continued": again["turn_id"],
+        }
+        assert evidence["connections"] >= 3
+        (work / "reconnect.json").write_text(json.dumps(evidence, indent=2))
+        print("PASS browser reconnect, cursor replay, two-tab cancel", sid)
+
+
+def coding_settings(page):
+    import json
+
+    from webdemo.tests.coding_fixture import (
+        allow,
+        finished,
+        post,
+        service,
+        turn,
+        wait_for,
+    )
+
+    models = []
+
+    def respond(req, delta):
+        models.append(req["model"])
+        if req["messages"][-1]["role"] == "user" and "hold-profile" in str(
+            req["messages"][-1]
+        ):
+            return delta(("WriteFile", {"file_path": "held.txt", "content": "A"}))
+        return delta(content="provider-replied")
+
+    with service("coding-settings", respond) as (work, repo, url, c):
+        cfg = json.loads((work / "provider.json").read_text())["providers"][0]
+        sid = post(c, "sessions", directory=str(repo))["session_id"]
+        path = "sessions/" + sid
+        page.goto(url + "/#coding-settings/" + sid)
+        history = []
+        profile_ids = []
+        for name in ("web-first", "web-second"):
+            page.get_by_role("button", name="New provider").click()
+            form = page.locator("form").filter(
+                has=page.locator('input[name="api_key"]')
+            )
+            for key, value in {
+                "provider": name,
+                "model": name,
+                "endpoint": cfg["base_url"],
+                "api_key": "local-demo",
+            }.items():
+                form.locator('input[name="' + key + '"]').fill(value)
+            form.get_by_role("button", name="Save provider").click()
+            expect(form).to_have_count(0)
+            info = next(p for p in c.get("profiles").json() if p["provider"] == name)
+            profile_ids.append(info["profile_id"])
+            page.get_by_label("Model for the next turn").select_option(
+                info["profile_id"]
+            )
+            page.get_by_role("button", name="Apply settings").click()
+            page.wait_for_function(
+                "()=>!document.querySelector('button[type=submit]:disabled')"
+            )
+            expect(page.get_by_role("button", name="Apply settings")).to_be_enabled()
+            job = turn(c, path, name)
+            v = finished(c, path, job["turn_id"])
+            history.append(job["turn_id"])
+        assert models == ["web-first", "web-second"], models
+        page.reload()
+        expect(page.get_by_label("Model for the next turn")).to_have_value(
+            info["profile_id"]
+        )
+        assert "local-demo" not in page.locator("body").inner_text()
+        assert "local-demo" not in page.evaluate(
+            "JSON.stringify([localStorage,sessionStorage])"
+        )
+
+        def select_profile(key):
+            page.get_by_label("Model for the next turn").select_option(key)
+            with page.expect_response(
+                lambda r: r.request.method == "POST" and r.url.endswith("/settings")
+            ):
+                page.get_by_role("button", name="Apply settings").click()
+
+        select_profile(profile_ids[0])
+        active = turn(c, path, "hold-profile")
+        pending = wait_for(c, path, lambda v: v["permissions"])
+        select_profile(profile_ids[1])
+        allow(c, path, pending)
+        assert finished(c, path, active["turn_id"])["turns"][-1]["state"] == "completed"
+        next_turn = turn(c, path, "after switch")
+        finished(c, path, next_turn["turn_id"])
+        assert models[-3:] == ["web-first", "web-first", "web-second"]
+        select_profile("demo:local")
+        demo = turn(c, path, "explicit demo")
+        demo_view = finished(c, path, demo["turn_id"])
+        assert any(e["payload"].get("source") == "demo" for e in demo_view["events"])
+        bad = post(
+            c,
+            "profiles",
+            provider="bad-key",
+            protocol="openai-compat",
+            model="wrong-key-model",
+            endpoint=cfg["base_url"],
+            api_key="test-failure-marker",
+        )
+        post(c, path + "/settings", profile_id=bad["profile_id"])
+        t = turn(c, path, "connection test")
+        v = finished(c, path, t["turn_id"])
+        assert v["turns"][-1]["state"] == "failed" and v["turns"][-1]["reason"]
+        page.goto(url + "/#coding/" + sid)
+        expect(page.locator('[data-turn="' + t["turn_id"] + '"]')).to_contain_text(
+            "wrong-key-model"
+        )
+        page.get_by_label("Switch language").click()
+        expect(page.locator('[data-state="failed"]')).to_be_visible()
+        for marker in ("test-failure-marker", "local-demo"):
+            assert (
+                marker not in json.dumps(v)
+                and marker not in page.locator("body").inner_text()
+            )
+        (work / "settings.json").write_text(
+            json.dumps(
+                {
+                    "session": sid,
+                    "models": models,
+                    "turns": history,
+                    "failed_turn": t["turn_id"],
+                    "credential_matches": 0,
+                },
+                indent=2,
+            )
+        )
+        print("PASS browser settings, sources, failure", sid)
+
+
+def coding_extensions(page):
+    import json
+    import shutil
+    import sys
+
+    from mewcode.mcp.tool_wrapper import build_mcp_tool_name
+    from webdemo.tests.coding_fixture import finished, post, service, turn
+
+    tool = build_mcp_tool_name("local-stamp", "stamp")
+
+    def respond(req, delta):
+        messages = req["messages"]
+        if not any(m["role"] == "tool" for m in messages):
+            if any(t["function"]["name"] == tool for t in req["tools"]):
+                return delta((tool, {}))
+            return delta(content="extensions disconnected")
+        if "SKILL-WEB-MARK-12" in str(messages):
+            return delta(content="Skill selected the answer ORANGE-12")
+        return delta(content="done")
+
+    with service("coding-extensions", respond) as (work, repo, url, c):
+        cfg = work / "provider.json"
+        config = json.loads(cfg.read_text())
+        config["mcp_servers"] = [
+            {
+                "name": "local-stamp",
+                "command": str(Path(sys.base_prefix) / "bin/python3"),
+                "args": ["-B", "stamp.py"],
+            },
+            {"name": "unavailable-server", "command": "/missing/executable"},
+        ]
+        cfg.write_text(json.dumps(config))
+        shutil.copyfile(
+            Path(__file__).with_name("mcp_stdio_fixture.py"), repo / "stamp.py"
+        )
+        skills = repo / ".mewcode/skills"
+        skills.mkdir(parents=True)
+        (skills / "orange.md").write_text(
+            "---\nname: orange\ndescription: fixture\n---\nSKILL-WEB-MARK-12: include ORANGE-12 in your answer."
+        )
+        (skills / "invalid.md").write_text("---\n: [invalid YAML\n---\n")
+        sid = post(c, "sessions", directory=str(repo))["session_id"]
+        path = "sessions/" + sid
+        page.goto(url + "/#coding-settings/" + sid)
+        expect(page.get_by_role("status")).to_contain_text("invalid.md")
+        page.get_by_label("unavailable-server", exact=True).click()
+        expect(page.get_by_role("status")).to_contain_text("unavailable-server")
+        expect(page.get_by_label("unavailable-server", exact=True)).not_to_be_checked()
+        for name in ("orange", "local-stamp"):
+            with page.expect_response(
+                lambda r: r.request.method == "POST" and r.url.endswith("/settings")
+            ):
+                page.get_by_label(name, exact=True).click()
+        expect(page.locator("fieldset").filter(has_text="local-stamp")).to_contain_text(
+            tool
+        )
+        page.reload()
+        expect(page.locator("fieldset").filter(has_text="local-stamp")).to_contain_text(
+            tool
+        )
+        page.goto(url + "/#coding/" + sid)
+        t = turn(c, path, "run selected extensions")
+        page.get_by_role("button", name="Allow once", exact=True).click(timeout=30000)
+        v = finished(c, path, t["turn_id"])
+        expect(page.locator(".coding-history")).to_contain_text("ORANGE-12")
+        call = next(
+            e["payload"]["call_id"]
+            for e in v["events"]
+            if e["kind"] == "tool_call" and e["payload"]["tool"] == tool
+        )
+        assert any(
+            e["kind"] == "tool_result"
+            and e["payload"]["output"] == "MCP-SESSION-MARK-42"
+            for e in v["events"]
+        )
+        page.goto(url + "/#coding-settings/" + sid)
+        for name in ("orange", "local-stamp"):
+            with page.expect_response(
+                lambda r: r.request.method == "POST" and r.url.endswith("/settings")
+            ):
+                page.get_by_role("checkbox", name=name).click()
+        assert c.get(path + "/settings").json()["selected"]["mcp"] == []
+        assert (repo / "mcp-count.txt").read_text() == "x"
+        (work / "extensions.json").write_text(
+            json.dumps(
+                {
+                    "session": sid,
+                    "turn": t["turn_id"],
+                    "call": call,
+                    "tool": tool,
+                    "skill_answer": "ORANGE-12",
+                    "result": "MCP-SESSION-MARK-42",
+                    "count": 1,
+                    "disconnected": True,
+                    "failures": ["invalid.md", "unavailable-server"],
+                },
+                indent=2,
+            )
+        )
+        print("PASS browser Skill and MCP", sid)
+
+
+def coding_provider_error(page):
+    import json
+
+    from webdemo import providers
+    from webdemo.tests.coding_fixture import finished, post, service, turn
+
+    _, native = providers.select()
+    marker = "mewcode-invalid-acceptance-credential"
+    with service("coding-provider-error") as (work, repo, url, c):
+        profile = post(
+            c,
+            "profiles",
+            provider=native.name,
+            model=native.model,
+            protocol=native.protocol,
+            endpoint=native.base_url,
+            api_key=marker,
+        )
+        sid = post(
+            c, "sessions", directory=str(repo), profile_id=profile["profile_id"]
+        )["session_id"]
+        path = "sessions/" + sid
+        page.goto(url + "/#coding/" + sid)
+        job = turn(c, path, "Connectivity check. Answer OK.")
+        v = finished(c, path, job["turn_id"])
+        assert v["turns"][-1]["state"] == "failed"
+        reason = v["turns"][-1]["reason"]
+        assert any(
+            word in reason.lower()
+            for word in ("401", "403", "authenti", "api key", "unauthor")
+        ), reason
+        expect(page.locator('[data-turn="' + job["turn_id"] + '"]')).to_contain_text(
+            native.model
+        )
+        expect(page.get_by_role("link", name="Review model settings")).to_be_visible()
+        locations = {
+            "settings": c.get("profiles").text,
+            "events": json.dumps(v),
+            "page": page.locator("body").inner_text(),
+            "browser_storage": page.evaluate(
+                "JSON.stringify([localStorage,sessionStorage])"
+            ),
+            "logs": (work / "server.log").read_text(),
+            "transcript": "".join(
+                p.read_text() for p in (work / "state/sessions").rglob("*.jsonl")
+            ),
+        }
+        counts = {k: value.count(marker) for k, value in locations.items()}
+        assert not any(counts.values()), counts
+        (work / "provider_error.json").write_text(
+            json.dumps(
+                {
+                    "session": sid,
+                    "turn": job["turn_id"],
+                    "provider": native.name,
+                    "model": native.model,
+                    "reason": reason,
+                    "credential_matches": counts,
+                },
+                indent=2,
+            )
+        )
+        print(
+            "PASS real endpoint authentication failure", native.name, native.model, sid
+        )
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", default="dashboard")
@@ -504,7 +1150,8 @@ def main():
         if not chrome and Path(system).is_file():
             chrome = system
         browser = pw.chromium.launch(executable_path=chrome, headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 980})
+        context = browser.new_context(viewport={"width": 1440, "height": 980})
+        page = context.new_page()
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         for name in phase.split(","):
@@ -515,4 +1162,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     main()

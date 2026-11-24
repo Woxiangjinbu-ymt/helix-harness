@@ -1,18 +1,18 @@
 """Exercise a disposable backend, live SSE reconnect, a lost parent, and sandbox failure."""
 
 import argparse
-from contextlib import closing
 import hashlib
 import json
-import shutil
-import sqlite3
 import os
-from pathlib import Path
+import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+from contextlib import closing
+from pathlib import Path
 
 import httpx
 
@@ -75,7 +75,7 @@ def run():
             timeout=120,
         ) as c,
     ):
-        env = {**os.environ, "RSI_WEB_HOME": tmp, "RSI_MOCK_PORT": free_port()}
+        env = {**os.environ, "RSI_WEB_HOME": tmp, "CODING_WEB_HOME": str(Path(tmp)/"coding"), "RSI_MOCK_PORT": free_port()}
         server = start(env, port, c)
         try:
 
@@ -170,7 +170,7 @@ def fingerprint(value):
 
 
 def copy_baseline(target):
-    from webdemo.store import ARCHIVE, HOME, HISTORY
+    from webdemo.store import ARCHIVE, HISTORY, HOME
     archive = target / "archive"
     for name in HISTORY:
         source = ARCHIVE / name
@@ -212,6 +212,7 @@ def copy_baseline(target):
 
 def observe_baseline(target):
     from dataclasses import asdict
+
     from mewcode.memory.session import SessionManager
     from mewcode.rsi.evaluator import verified_release
 
@@ -296,13 +297,177 @@ def baseline(target, create):
     print("PASS", target / "baseline.json")
 
 
+def coding():
+    from webdemo.tests.coding_fixture import (
+        allow,
+        finished,
+        post,
+        service,
+        turn,
+        wait_for,
+    )
+
+    controls = {}
+    requests = []
+
+    def respond(req, delta):
+        messages = req["messages"]
+        requests.append(messages)
+        tail = str(messages[-1]["content"])
+        if "Please provide your summary" in tail:
+            assert "EARLY-MARKER" in str(messages)
+            return delta(content="<summary>EARLY-SUMMARY-17</summary>")
+        if "count then sleep" in tail:
+            return delta(
+                (
+                    "Bash",
+                    {"command": "printf x >> count.txt; sleep 600", "timeout": 700},
+                )
+            )
+        if "recent details" in tail:
+            return delta(content="EARLY-SUMMARY-17 / RECENT-DETAIL-23")
+        if "read my file" in tail:
+            return delta(("ReadFile", {"file_path": "fact.txt"}))
+        return delta(content="received")
+
+    with service("coding-recovery", respond, controls) as (work, repo, _url, c):
+        (repo / "fact.txt").write_text("tool evidence")
+        sid = post(c, "sessions", directory=str(repo))["session_id"]
+        path = "sessions/" + sid
+        completed = turn(c, path, "read my file")["turn_id"]
+        finished(c, path, completed)
+        tid = turn(c, path, "count then sleep")["turn_id"]
+        allow(c, path, wait_for(c, path, lambda v: v["permissions"]))
+        limit = time.monotonic() + 15
+        while not (repo / "count.txt").exists() and time.monotonic() < limit:
+            time.sleep(0.05)
+        assert (repo / "count.txt").read_text() == "x"
+        before = c.get(path + "/view").json()
+        controls["restart"]()
+        v = wait_for(
+            c, path, lambda v: any(e["kind"] == "unknown_result" for e in v["events"])
+        )
+        assert [t["state"] for t in v["turns"]] == ["completed", "interrupted"]
+        assert v["turns"][0]["turn_id"] == completed and v["turns"][1]["turn_id"] == tid
+        assert before["events"] == v["events"][: len(before["events"])]
+        expected = [e for e in v["events"] if e["seq"] > before["through_seq"]]
+        for _ in range(2):
+            with c.stream(
+                "GET",
+                path + "/events?after=invalid",
+                headers={"Last-Event-ID": sid + "/" + str(before["through_seq"])},
+            ) as response:
+                events = (
+                    json.loads(l[6:])
+                    for l in response.iter_lines()
+                    if l.startswith("data: ")
+                )
+                assert [next(events) for _ in expected] == expected
+        for cursor in ("bad", sid + "/9999999", "wrong/0", sid + "/-1"):
+            with c.stream(
+                "GET", path + "/events", params={"after": cursor}
+            ) as response:
+                assert next(response.iter_lines()) == "event: reset_required"
+        from webdemo.coding.store import Store
+
+        store = Store(work / "state")
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            with store.connection() as db:
+                if db.execute("SELECT state FROM leases").fetchone()[0] == "free":
+                    break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("cleanup proof missing")
+        assert (repo / "count.txt").read_text() == "x"
+        assert any(item["path"]=="count.txt" for item in c.get(path+"/diff").json())
+        resumed=turn(c,path,"resume after interruption")["turn_id"]
+        assert finished(c,path,resumed)["turns"][-1]["state"]=="completed"
+        # 使用原生运行时写入多轮历史，再降低下一轮的上下文窗口以触发真实压缩。
+        new = post(c, "sessions", directory=str(repo))["session_id"]
+        ctx = "sessions/" + new
+        prompts = [
+            "EARLY-MARKER " + ("chronicle " * 2000),
+            "read my file",
+            "one",
+            "two",
+            "three",
+            "RECENT-DETAIL-23",
+        ]
+        for user in prompts:
+            finished(c, ctx, turn(c, ctx, user)["turn_id"])
+        config = json.loads((work / "provider.json").read_text())["providers"][0]
+        profile = post(
+            c,
+            "profiles",
+            provider="short",
+            model="small",
+            endpoint=config["base_url"],
+            protocol="openai-compat",
+            api_key="local-demo",
+            context_window=33001,
+        )
+        post(c, ctx + "/settings", profile_id=profile["profile_id"])
+        compact = finished(c, ctx, turn(c, ctx, "compact now")["turn_id"])
+        assert any(
+            e["kind"] == "compact" and e["payload"].get("boundary")
+            for e in compact["events"]
+        ), compact["turns"]
+        assert any(e["kind"] == "tool_result" for e in compact["events"])
+        controls["restart"]()
+        boundary_view = c.get(ctx + "/view").json()
+        assert boundary_view["events"] == compact["events"]
+        final = finished(c, ctx, turn(c, ctx, "recall recent details")["turn_id"])
+        msgs = json.dumps(requests[-1])
+        assert (
+            msgs.count("EARLY-SUMMARY-17") == 1
+            and msgs.count("RECENT-DETAIL-23") == 1
+            and "chronicle " not in msgs
+        )
+        assert (
+            final["turns"][-1]["state"] == "completed"
+            and (repo / "count.txt").read_text() == "x"
+        )
+        with store.connection(True) as db:
+            db.execute("DELETE FROM events WHERE session=? AND seq<=2", (sid,))
+        with c.stream(
+            "GET", path + "/events", params={"after": sid + "/0"}
+        ) as response:
+            assert next(response.iter_lines()) == "event: reset_required"
+        (work / "recovery.json").write_text(
+            json.dumps(
+                {
+                    "session": sid,
+                    "lost_turn": tid,
+                    "restored": v["turns"],
+                    "replayed": [e["seq"] for e in expected],
+                    "disk_count": 1,"continued_after_interrupt":resumed,
+                    "compact_session": new,
+                    "boundary": [
+                        e for e in compact["events"] if e["kind"] == "compact"
+                    ],
+                    "model_input_summary_count": msgs.count("EARLY-SUMMARY-17"),
+                    "model_input_detail_count": msgs.count("RECENT-DETAIL-23"),
+                },
+                indent=2,
+            )
+        )
+        print("PASS restart, replay, unknown result, compaction", sid, new)
+
+
 if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT))
     parser = argparse.ArgumentParser()
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--save-baseline", type=Path)
     actions.add_argument("--verify-baseline", type=Path)
+    actions.add_argument("--coding", action="store_true")
     args = parser.parse_args()
-    if args.save_baseline or args.verify_baseline:
-        baseline(args.save_baseline or args.verify_baseline, args.save_baseline is not None)
+    if args.coding:
+        coding()
+    elif args.save_baseline or args.verify_baseline:
+        baseline(
+            args.save_baseline or args.verify_baseline, args.save_baseline is not None
+        )
     else:
         run()
