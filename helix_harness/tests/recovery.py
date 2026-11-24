@@ -215,8 +215,8 @@ def copy_baseline(target):
 def observe_baseline(target):
     from dataclasses import asdict
 
-    from mewcode.memory.session import SessionManager
-    from mewcode.rsi.evaluator import verified_release
+    from mtcode.memory.session import SessionManager
+    from helix_harness.rsi.evaluator import verified_release
 
     with tempfile.TemporaryDirectory(prefix="mewcode-compat-") as temp:
         work = Path(temp)

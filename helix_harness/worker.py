@@ -7,12 +7,12 @@ import shutil
 import signal
 import sys
 
-from mewcode.rsi.baseline import baseline
-from mewcode.rsi.contracts import EvalCell
-from mewcode.rsi.evaluator import Evaluator, ScoreRequest, verified_release
-from mewcode.rsi.fixtures import tree_digest
-from mewcode.rsi.orchestrator import optimize
-from mewcode.rsi.runtime import MewCodeRuntime, RunSpec
+from helix_harness.rsi.baseline import baseline
+from helix_harness.rsi.contracts import EvalCell
+from helix_harness.rsi.evaluator import Evaluator, ScoreRequest, verified_release
+from helix_harness.rsi.fixtures import tree_digest
+from helix_harness.rsi.orchestrator import optimize
+from helix_harness.rsi.runtime import MTCodeRuntime, RunSpec
 from . import catalog, custom
 from .mock import providers, proposer
 from .store import sources, HOME, DEFAULT, db, emit, finish, jobs, read
@@ -109,7 +109,7 @@ async def execute(j):
             target.mkdir(parents=True)
             for name in ("identity.json", "events.jsonl", "outcome.json"):
                 shutil.copyfile(source / name, target / name)
-            from mewcode.rsi.fixtures import copy_files
+            from helix_harness.rsi.fixtures import copy_files
 
             (target / "artifact").mkdir()
             copy_files(source / "artifact", target / "artifact")
@@ -189,7 +189,7 @@ async def execute(j):
                 strategy_dir=effective,
                 strategy_digest=digest,
             )
-            outcome = await MewCodeRuntime(state / "runs").run(spec, provider)
+            outcome = await MTCodeRuntime(state / "runs").run(spec, provider)
             notify(
                 "task_completed",
                 {"status": outcome["status"], "cell": outcome["cell_id"]},

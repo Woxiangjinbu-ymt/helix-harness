@@ -8,7 +8,7 @@ Helix 面向两类使用者。开发者希望在自己的仓库里完成一次�
 
 当前 Web 应用默认进入 Overview。Coding Workspace 每次提交都会创建新作业。冻结题会经过独立评分，注册项目则从提交中提取受限的公开文件，在临时副本上执行公开测试。这条路径适合复查实验，但开发者无法在同一网页会话中接着上一轮修改自己的仓库。[前端入口](../../helix_harness/frontend/src/main.tsx) · [任务提交](../../helix_harness/frontend/src/pages/Workspace.tsx) · [仓库导入](../../helix_harness/repositories.py) · [作业执行](../../helix_harness/worker.py)
 
-MewCode 已能流式输出回复，发出工具调用、结果、权限请求和上下文压缩通知，并能从会话记录恢复对话。现有 RSI 平台已经保存评分回执、策略快照和版本决策。拒绝候选时会保留父版本，当前 Web 手动回滚请求返回 HTTP 409。后续验收需要分别验证这两种行为。[原生事件](../../vendor/rsi/mewcode/agent.py) · [会话存储](../../vendor/rsi/mewcode/memory/session.py) · [版本决策](../../vendor/rsi/mewcode/rsi/versions.py) · [Web 版本接口](../../helix_harness/api.py)
+MewCode 已能流式输出回复，发出工具调用、结果、权限请求和上下文压缩通知，并能从会话记录恢复对话。现有 RSI 平台已经保存评分回执、策略快照和版本决策。拒绝候选时会保留父版本，当前 Web 手动回滚请求返回 HTTP 409。后续验收需要分别验证这两种行为。[原生事件](../../vendor/mtcode-runtime/mtcode/agent.py) · [会话存储](../../vendor/mtcode-runtime/mtcode/memory/session.py) · [版本决策](../../helix_harness/rsi/versions.py) · [Web 版本接口](../../helix_harness/api.py)
 
 ## 目标
 

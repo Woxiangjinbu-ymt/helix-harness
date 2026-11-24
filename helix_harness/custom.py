@@ -10,7 +10,7 @@ import tempfile
 from types import SimpleNamespace
 import uuid
 
-from mewcode.agent import (
+from mtcode.agent import (
     LoopComplete,
     PermissionRequest,
     PermissionReply,
@@ -18,20 +18,20 @@ from mewcode.agent import (
     ToolUseEvent,
     ErrorEvent,
 )
-from mewcode.client import create_client
-from mewcode.conversation import ConversationManager
-from mewcode.permissions import (
+from mtcode.client import create_client
+from mtcode.conversation import ConversationManager
+from mtcode.permissions import (
     DangerousCommandDetector,
     PathSandbox,
     PermissionMode,
     RuleEngine,
 )
-from mewcode.tools import create_default_registry
-from mewcode.tools.load_skill import LoadSkill
-from mewcode.rsi.fixtures import copy_files, tree_digest
-from mewcode.rsi.strategy import assemble_strategy, FrozenSkillLoader
-from mewcode.rsi.trajectory import RecordingClient, TrajectoryCollector
-from mewcode.rsi.workspace import (
+from mtcode.tools import create_default_registry
+from mtcode.tools.load_skill import LoadSkill
+from helix_harness.rsi.fixtures import copy_files, tree_digest
+from helix_harness.rsi.strategy import assemble_strategy, FrozenSkillLoader
+from helix_harness.rsi.trajectory import RecordingClient, TrajectoryCollector
+from helix_harness.rsi.workspace import (
     CellAgent,
     PUBLIC_TEST,
     WorkspacePermissions,

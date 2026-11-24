@@ -10,16 +10,16 @@ from dataclasses import asdict
 from pathlib import Path
 
 from ..paths import APP_DATA
-from mewcode import agent as native
-from mewcode.config import ProviderConfig
-from mewcode.conversation import ConversationManager
-from mewcode.hooks.engine import HookEngine, HookNotification
-from mewcode.hooks.loader import load_hooks
-from mewcode.hooks.models import ToolRejectedError
-from mewcode.memory.session import (
+from mtcode import agent as native
+from mtcode.config import ProviderConfig
+from mtcode.conversation import ConversationManager
+from mtcode.hooks.engine import HookEngine, HookNotification
+from mtcode.hooks.loader import load_hooks
+from mtcode.hooks.models import ToolRejectedError
+from mtcode.memory.session import (
     SessionRecord,
 )
-from mewcode.permissions import (
+from mtcode.permissions import (
     DangerousCommandDetector,
     Decision,
     PathSandbox,
@@ -27,9 +27,9 @@ from mewcode.permissions import (
     PermissionMode,
     RuleEngine,
 )
-from mewcode.permissions.rules import Rule, extract_content
-from mewcode.tools import ToolRegistry
-from mewcode.tools.base import Tool, ToolResult
+from mtcode.permissions.rules import Rule, extract_content
+from mtcode.tools import ToolRegistry
+from mtcode.tools.base import Tool, ToolResult
 
 from .model_input import CodingModel, compact_record, replay
 from .store import uid
@@ -198,13 +198,13 @@ class WebAgent(native.Agent):
 
 
 async def run(data, channel):
-    from mewcode.tools.base import MAX_OUTPUT_CHARS
-    from mewcode.tools.bash import Bash
-    from mewcode.tools.edit_file import EditFile
-    from mewcode.tools.glob import Glob
-    from mewcode.tools.grep import Grep
-    from mewcode.tools.read_file import ReadFile
-    from mewcode.tools.write_file import WriteFile
+    from mtcode.tools.base import MAX_OUTPUT_CHARS
+    from mtcode.tools.bash import Bash
+    from mtcode.tools.edit_file import EditFile
+    from mtcode.tools.glob import Glob
+    from mtcode.tools.grep import Grep
+    from mtcode.tools.read_file import ReadFile
+    from mtcode.tools.write_file import WriteFile
 
     snap = data["snapshot"]
     directory = Path(data["directory"])
@@ -220,13 +220,13 @@ async def run(data, channel):
         max_output_tokens=snap["max_output_tokens"],
     )
 
-    from mewcode.context.manager import compute_compact_threshold
+    from mtcode.context.manager import compute_compact_threshold
 
     harness = data.get("harness") or {}
     overlays = harness.get("description_overlays") or {}
     guidance_hooks = []
     if harness.get("tool_hooks"):
-        from mewcode.rsi.repo.harness import build_guidance_hooks
+        from helix_harness.rsi.repo.harness import build_guidance_hooks
 
         guidance_hooks = build_guidance_hooks(harness["tool_hooks"])
 

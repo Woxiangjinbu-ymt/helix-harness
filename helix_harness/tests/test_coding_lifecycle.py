@@ -157,7 +157,7 @@ def test_turn_receipts_and_events(local):
 
 
 def test_config_snapshot(local, monkeypatch):
-    from mewcode.config import AppConfig, ProviderConfig
+    from mtcode.config import AppConfig, ProviderConfig
 
     _, store = local
     p = ProviderConfig(
@@ -769,7 +769,7 @@ async def test_policy_at_execution_and_sandbox_unavailable(configured, monkeypat
 
 
 def test_session_scoped_long_result_and_failed_rule(configured, monkeypatch):
-    from mewcode.permissions.rules import RuleEngine
+    from mtcode.permissions.rules import RuleEngine
     from helix_harness import mock
 
     client, repo, store, _config = configured
@@ -1266,7 +1266,7 @@ def test_session_bound_extensions_and_disconnect(configured, monkeypatch):
     import sys
     from pathlib import Path
 
-    from mewcode.mcp.tool_wrapper import build_mcp_tool_name
+    from mtcode.mcp.tool_wrapper import build_mcp_tool_name
     from helix_harness import mock
     from helix_harness.tests.coding_fixture import allow, finished, post, turn, wait_for
 
@@ -1768,7 +1768,7 @@ def test_compact_replay_keeps_owned_images_and_serializes_all_protocols(local):
 
     from PIL import Image
 
-    from mewcode.conversation import ConversationManager
+    from mtcode.conversation import ConversationManager
     from helix_harness.coding import attachments
     from helix_harness.coding.model_input import (
         compact_record,

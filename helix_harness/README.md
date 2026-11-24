@@ -98,7 +98,7 @@ React / TypeScript / Vite
 FastAPI ──┬── console.sqlite     作业、仓库登记、公开事件游标
           ├── 只读归档适配器      SQLite、评分回执、JSONL、封存文件
           └── 独立 Python 作业进程
-               ├── MewCodeRuntime → 原生 Agent.run → 权限检查、独立工作树
+               ├── MTCodeRuntime → 原生 Agent.run → 权限检查、独立工作树
                ├── Evaluator → 固定 Docker 镜像 → 评分回执
                └── baseline → optimize → FailureAnalyzer / DefaultStrategyOptimizer
                                            └── VersionManager → 快照、矩阵、版本决策
@@ -112,7 +112,7 @@ FastAPI ──┬── console.sqlite     作业、仓库登记、公开事件�
 | `repositories.py`、`mock.py` | 公开 Git 提交导入、无密钥演示 Provider |
 | `frontend/src/` | 五个页面、请求订阅、公共样式和 TypeScript 类型 |
 | `tests/` | HTTP、浏览器、SSE 重连、父进程丢失和异常恢复验收 |
-| `../mewcode/rsi/orchestrator.py` | 原编排器增加可选阶段通知和起始版本校验。原模块 CLI 保留默认行为 |
+| `../helix_harness/rsi/orchestrator.py` | 原编排器增加可选阶段通知和起始版本校验。原模块 CLI 保留默认行为 |
 
 引擎继续持有评分规则、冻结题集、安全配置和版本引用。Optimizer 仍只能修改 Prompt、inline Skills 和 Workflow。Web 作业数据库记录进度，版本决策从引擎控制数据库读取。新作业最多同时运行三个。服务用文件锁保证每个 Web 状态目录只有一个管理进程，运行时使用一个 Uvicorn worker。
 
@@ -156,7 +156,7 @@ helix_harness/demo-repository.sh
 .venv/bin/python helix_harness/tests/api_smoke.py
 .venv/bin/python helix_harness/tests/browser.py --phase dashboard,coding,evolve,history,cancellation,registered
 .venv/bin/python helix_harness/tests/recovery.py
-.venv/bin/python -B -m pytest -q vendor/rsi/tests
+.venv/bin/python -B -m pytest -q vendor/mtcode-runtime/tests helix_harness/tests/rsi
 ```
 
 真实模型浏览器验收为显式选项。将名称设为本机已配置的 Provider 后执行。

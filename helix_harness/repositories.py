@@ -9,9 +9,9 @@ import subprocess
 import tempfile
 import uuid
 
-from mewcode.rsi.fixtures import materialize_repo, tree_digest
+from helix_harness.rsi.fixtures import materialize_repo, tree_digest
 from .paths import PROJECT
-from .store import HOME, ROOT, db
+from .store import HOME, db
 
 
 def register(name):
@@ -23,7 +23,7 @@ def register(name):
         or not (project / ".git").exists()
     ):
         raise ValueError("Choose a Git project directly under RSI_PUBLIC_REPOS")
-    if any(project.is_relative_to(p) or p.is_relative_to(project) for p in (PROJECT, ROOT)):
+    if project.is_relative_to(PROJECT) or PROJECT.is_relative_to(project):
         raise ValueError("Engine and evaluation sources are protected")
 
     def git(*args):

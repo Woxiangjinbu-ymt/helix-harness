@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .paths import APP_DATA, PROJECT
-from mewcode.rsi.runtime import ROOT
-from mewcode.rsi.fixtures import BENCHMARK
+from helix_harness.rsi.runtime import ROOT
+from helix_harness.rsi.fixtures import BENCHMARK
 
 ARCHIVE = Path(
     os.getenv("RSI_ARCHIVE", APP_DATA / "RSI")
@@ -42,7 +42,7 @@ def db():
 
 
 def init():
-    if HOME.is_relative_to(PROJECT) or HOME.is_relative_to(ROOT):
+    if HOME.is_relative_to(PROJECT):
         raise ValueError("Web state must be outside the source tree")
     HOME.mkdir(parents=True, mode=0o700, exist_ok=True)
     with db() as con:

@@ -71,7 +71,7 @@ export const en: Messages = {
     projectsGroup: "Projects",
     noSessionsYet: "No sessions yet",
     localWorkspace: "Local workspace",
-    runtimeName: "MewCode runtime",
+    runtimeName: "MTCode runtime",
     crumbWorkspace: "Workspace",
   },
   nav: {
@@ -164,7 +164,7 @@ export const en: Messages = {
     repoPreviewHint: "Click any file to inspect source code",
     composerTitle: "Start a repository task",
     composerSubtitle:
-      "Assign an instruction to the MewCode agent inside an isolated git worktree and evaluate the sealed artifact.",
+      "Assign an instruction to the MTCode agent inside an isolated git worktree and evaluate the sealed artifact.",
     taskInstructions: "Task instructions",
     taskInstructionsPlaceholder: "Describe the repository change…",
     useBenchmarkTask: "Use benchmark task",

@@ -25,9 +25,9 @@ async def ensure_store():
         return
     lock = None
     try:
-        from .store import HOME, ROOT, TERMINAL, finish, init, jobs
+        from .store import HOME, TERMINAL, finish, init, jobs
 
-        if HOME.is_relative_to(PROJECT) or HOME.is_relative_to(ROOT):
+        if HOME.is_relative_to(PROJECT):
             raise ValueError("RSI storage must be outside source tree")
         HOME.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock = (HOME / "server.lock").open("a")
@@ -129,7 +129,7 @@ async def monitor(id, proc):
 
 
 async def launch(kind, config):
-    from mewcode.rsi.fixtures import BENCHMARK, tree_digest
+    from helix_harness.rsi.fixtures import BENCHMARK, tree_digest
     from . import catalog, mock
     from .store import DEFAULT, HISTORY, jobs
 
@@ -227,7 +227,7 @@ async def enqueue(kind, cfg, study, mode, id):
 def health():
     from .store import ROOT, read
 
-    from mewcode.rsi.evaluator import verified_release, CellFailure
+    from helix_harness.rsi.evaluator import verified_release, CellFailure
 
     policy = read(ROOT / "evaluation/policy/docker.json")
     try:
@@ -252,7 +252,7 @@ def health():
         ready = result.returncode == 0 and result.stdout.strip() == policy["platform"]
     except (OSError, subprocess.TimeoutExpired):
         ready = False
-    return dict(engine="MewCode", release_verified=release, sandbox_ready=ready)
+    return dict(engine="MTCode", release_verified=release, sandbox_ready=ready)
 
 
 @router.get("/api/providers")
@@ -302,7 +302,7 @@ def repo_contents(id: str):
 
 @router.get("/api/benchmarks")
 def benches():
-    from mewcode.rsi.fixtures import BENCHMARK
+    from helix_harness.rsi.fixtures import BENCHMARK
 
     return [
         dict(
@@ -617,12 +617,12 @@ def rollback(id: str):
 
 @router.get("/api/dashboard/overview")
 def overview():
-    from mewcode.rsi.fixtures import BENCHMARK
+    from helix_harness.rsi.fixtures import BENCHMARK
     from . import catalog
 
     ts, es, vs = catalog.index()
     return dict(
-        engine="MewCode",
+        engine="MTCode",
         benchmark=BENCHMARK,
         tasks=ts,
         evolutions=es,

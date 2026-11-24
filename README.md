@@ -21,15 +21,19 @@ Coding 首页提供本地演示模型。使用真实模型时，可在 Coding �
 | --- | --- |
 | [helix_harness](helix_harness/) | 产品 API、Coding 会话管理、工具授权、RSI 编排适配及后台工作进程 |
 | [helix_harness/frontend](helix_harness/frontend/) | Coding 与 RSI 前端，通过 npm 引入锁定版本的 Penguin UI |
-| [vendor/rsi](vendor/rsi/) | 核心 Agent 运行时、单仓库自进化（Per-Repo RSI）引擎、冻结评测与回归测试 |
+| [vendor/mtcode-runtime/mtcode](vendor/mtcode-runtime/mtcode/) | 源自 MewCode 的通用 Agent 运行时，提供模型客户端、工具、权限、会话和扩展。Python 包与 CLI 名为 `mtcode` |
+| [helix_harness/rsi](helix_harness/rsi/) | Helix 的冻结基准实验、独立评分与 Harness 版本决策 |
+| [helix_harness/rsi/repo](helix_harness/rsi/repo/) | 单仓库自进化，包含用例合成、优化、评测和策略装配 |
+| [evaluation](evaluation/) | 可复现的题集、校准数据、评分策略与发布清单 |
 | [docs/redesign](docs/redesign/) | 产品规格、设计、任务和历史验收记录 |
 
-仓库内的相对路径依赖由 uv 和 npm 锁文件管理。检出本项目即可开发。更新运行时须重新验证冻结评测，依赖来源见[说明](vendor/rsi/README.md)。
+uv 从本仓库的 `vendor/mtcode-runtime` 安装 `mtcode`。Provider 是实际接收模型请求的服务，通过 Coding 设置或 `providers.yaml` 选择。Python 与前端依赖分别由 uv 和 npm 锁定。检出本项目即可开发。更新运行时须重新验证冻结评测，依赖来源见[说明](vendor/mtcode-runtime/README.md)。
 
 ## 验证
 
 ```sh
 uv run --frozen python -B -m pytest -q
+uv run --frozen python -m helix_harness.rsi.preflight verify
 npm --prefix helix_harness/frontend run build
 uv run --frozen python -m helix_harness.tests.browser --phase coding_onboarding
 ```

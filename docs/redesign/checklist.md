@@ -308,11 +308,11 @@
 | 验证入口 | 对应标准 | 通过依据 |
 | --- | --- | --- |
 | T502 · `npm --prefix helix_harness/frontend run build` | AC01、AC14 | 类型检查与构建成功退出，用构建产物打开普通会话和 RSI 两条路由，能加载对应页面。 |
-| T503 · `.venv/bin/python -B -m pytest -q vendor/rsi/tests` | AC16、AC17、AC26 的原生与引擎回归 | 原生与 RSI 套件通过，版本事务竞争和中断恢复用例有实际结果。T510 单独核对真实 CLI 与 TUI。 |
+| T503 · `.venv/bin/python -B -m pytest -q vendor/mtcode-runtime/tests helix_harness/tests/rsi` | AC16、AC17、AC26 的原生与引擎回归 | 原生与 RSI 套件通过，版本事务竞争和中断恢复用例有实际结果。T510 单独核对真实 CLI 与 TUI。 |
 | T503 · `.venv/bin/python -B -m pytest -q helix_harness/tests/test_coding_lifecycle.py helix_harness/tests/test_exchange.py` | AC05–AC10、AC19–AC24 的生命周期与交换契约 | 两个新测试文件在对应功能交付后显式运行，核对唯一终态、写入权交接、幂等和配置隔离。 |
 | T504 · 分别运行 `.venv/bin/python helix_harness/tests/api_smoke.py` 和 `.venv/bin/python helix_harness/tests/recovery.py` | AC05、AC07–AC10、AC15、AC19、AC22、AC25 | 在验收实例通过 HTTP、SSE 和实际服务重启复核对应结果，保留原作业与新会话各自的标识。 |
 | T504 · `.venv/bin/python helix_harness/tests/browser.py --phase dashboard,coding,evolve,history,cancellation,registered`，另以已配置的真实 Provider 运行同脚本的 `--phase real` | AC14–AC18、AC26 的既有 RSI 路径 | 旧单题、公开示例、进化和历史仍可由原链接打开。旧 `coding` 与 `real` 浏览器场景的证据归入 RSI。 |
 | T224、T225–T226、T509、T511–T512 · 在相应任务交付场景后，分别运行 `.venv/bin/python helix_harness/tests/browser.py --phase coding_real`、`--phase coding_long`、`--phase coding_rsi_roundtrip`（同一脚本） | AC02、AC07、AC13、AC27 | 逐次保留普通会话的真实模型证据、同一长任务的实际时长和连续演示中的两个标识。 |
-| T510 · 在验收仓库用原生 CLI 的 `-p` 和 `--output-format stream-json` 发起工具请求，再在 tmux 启动原 TUI | AC26 | CLI 输出有实际工具结果，TUI 可在升级前会话副本上续聊并核对已知事实。[原生测试约定](../../vendor/rsi/AGENT.md) |
+| T510 · 在验收仓库用原生 CLI 的 `-p` 和 `--output-format stream-json` 发起工具请求，再在 tmux 启动原 TUI | AC26 | CLI 输出有实际工具结果，TUI 可在升级前会话副本上续聊并核对已知事实。[原生测试约定](../../vendor/mtcode-runtime/AGENT.md) |
 
 各阶段收尾将本清单的实际结果回填到对应任务。最终按通过、失败、阻塞和未执行分别汇总，以 AC 编号标明缺失证据与复测结果。

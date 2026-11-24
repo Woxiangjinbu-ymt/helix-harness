@@ -21,12 +21,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from mewcode.tools.bash import _interpret_exit_code
-from mewcode.tools.edit_file import EditFile
-from mewcode.tools.read_file import ReadFile
-from mewcode.tools.write_file import WriteFile
+from mtcode.tools.bash import _interpret_exit_code
+from mtcode.tools.edit_file import EditFile
+from mtcode.tools.read_file import ReadFile
+from mtcode.tools.write_file import WriteFile
 
-from ..paths import APP_DATA, ENGINE_ROOT, LEGACY_DATA, PROJECT
+from ..paths import APP_DATA, PRIVATE_BENCHMARK, LEGACY_DATA, PROJECT
 from .worktrees import READ_LIMIT
 
 
@@ -181,7 +181,7 @@ def shell_profile(tree, temp, state):
         LEGACY_DATA,
         state,
         *([tree.admin] if tree.admin else []),
-        ENGINE_ROOT / "evaluation/repo-python-v1/private",
+        PRIVATE_BENCHMARK,
         *[
             Path(os.environ[k]).expanduser().resolve()
             for k in (

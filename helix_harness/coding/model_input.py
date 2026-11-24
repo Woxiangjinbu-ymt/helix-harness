@@ -3,15 +3,15 @@
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
-from mewcode.client import _mark_last_user_tail_for_cache, _supports_adaptive_thinking
-from mewcode.conversation import ThinkingBlock
-from mewcode.conversation_pairing import ensure_tool_pairing
-from mewcode.memory.session import (
+from mtcode.client import _mark_last_user_tail_for_cache, _supports_adaptive_thinking
+from mtcode.conversation import ThinkingBlock
+from mtcode.conversation_pairing import ensure_tool_pairing
+from mtcode.memory.session import (
     SessionRecord,
     make_compact_boundary,
     records_to_messages,
 )
-from mewcode.serialization import build_messages
+from mtcode.serialization import build_messages
 
 from .attachments import hydrate
 
@@ -193,7 +193,7 @@ class CodingModel:
             self.inner.set_max_output_tokens(tokens)
 
     async def stream(self, conversation, *args, **kwargs):
-        from mewcode.tools.base import StreamEnd, TextDelta
+        from mtcode.tools.base import StreamEnd, TextDelta
 
         await self.channel.request("model_permission")
         if self.inner is None:

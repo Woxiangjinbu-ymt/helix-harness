@@ -41,7 +41,7 @@ def credential_version(root, secret):
 
 
 def command_hooks(config):
-    from mewcode.hooks.loader import load_hooks
+    from mtcode.hooks.loader import load_hooks
 
     from .store import digest
 
@@ -313,7 +313,7 @@ def stage_skills(base, target, errors):
 
 def mcp_definitions(config, store):
     """仅解析该服务显式声明的环境和请求头，冻结到受保护的绑定。"""
-    from mewcode.config import resolve_env_vars
+    from mtcode.config import resolve_env_vars
 
     if not config.mcp_servers:
         return {}
@@ -369,8 +369,8 @@ def mcp_definitions(config, store):
 def extension_catalog(directory, store=None):
     from pathlib import Path
 
-    from mewcode.config import AppConfig
-    from mewcode.skills.loader import SkillLoader
+    from mtcode.config import AppConfig
+    from mtcode.skills.loader import SkillLoader
 
     try:
         config = providers.configuration()
@@ -383,7 +383,7 @@ def extension_catalog(directory, store=None):
         "hooks": {},
         "errors": [],
     }
-    from mewcode.hooks.loader import load_hooks
+    from mtcode.hooks.loader import load_hooks
 
     result["hooks"] = {
         h.id: raw for h, raw in zip(load_hooks(definitions), definitions)
@@ -570,7 +570,7 @@ def for_session(store, sid, profile, preferences=None):
     }
     from pathlib import Path
 
-    from mewcode.permissions.rules import RuleEngine
+    from mtcode.permissions.rules import RuleEngine
 
     from .worktrees import Worktree
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from difflib import unified_diff
 from pathlib import Path
 
-from ..paths import APP_DATA, ENGINE_ROOT, LEGACY_DATA, PROJECT
+from ..paths import APP_DATA, PRIVATE_BENCHMARK, LEGACY_DATA, PROJECT
 
 READ_LIMIT = 2 * 1024 * 1024
 
@@ -54,7 +54,7 @@ def check_public_path(target):
         APP_DATA,
         LEGACY_DATA,
         Path.home() / ".mewcode",
-        ENGINE_ROOT / "evaluation/repo-python-v1/private",
+        PRIVATE_BENCHMARK,
     ]
     for key in (
         "CODING_WEB_HOME",

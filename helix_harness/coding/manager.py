@@ -13,13 +13,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from mewcode.permissions.rules import Rule, RuleEngine, extract_content
-from mewcode.tools.bash import Bash
-from mewcode.tools.edit_file import EditFile
-from mewcode.tools.glob import Glob
-from mewcode.tools.grep import Grep
-from mewcode.tools.read_file import ReadFile
-from mewcode.tools.write_file import WriteFile
+from mtcode.permissions.rules import Rule, RuleEngine, extract_content
+from mtcode.tools.bash import Bash
+from mtcode.tools.edit_file import EditFile
+from mtcode.tools.glob import Glob
+from mtcode.tools.grep import Grep
+from mtcode.tools.read_file import ReadFile
+from mtcode.tools.write_file import WriteFile
 from helix_harness import providers
 
 from . import actions, profiles, worker
@@ -309,7 +309,7 @@ class Manager:
                 material = {"skills": {}, "mcp": {}}
             job.mcp = material["mcp"]
             job.policy = material.get("policy")
-            from mewcode.hooks.loader import load_hooks
+            from mtcode.hooks.loader import load_hooks
 
             job.hooks = load_hooks(definitions)
             db.execute("UPDATE turns SET worker=? WHERE id=?", (job.instance, tid))
@@ -376,7 +376,7 @@ class Manager:
         return self.store.event(db, job.sid, job.tid, source or uid(), kind, data)
 
     async def extension(self, job, p):
-        from mewcode.hooks.models import HookContext
+        from mtcode.hooks.models import HookContext
 
         parent = job.calls[p["parent_call"]]
         hook = next(

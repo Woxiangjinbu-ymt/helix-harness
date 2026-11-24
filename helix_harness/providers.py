@@ -5,8 +5,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .paths import PROVIDER_CONFIG
-from mewcode.client import create_client
-from mewcode.config import ConfigError, load_config
+from mtcode.client import create_client
+from mtcode.config import ConfigError, load_config
 
 
 def configuration():

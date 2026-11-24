@@ -17,7 +17,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from mewcode.rsi.repo import (
+from helix_harness.rsi.repo import (
     RepoRSIOrchestrator,
     RepoRSIStore,
     RepoSuiteEvaluator,
@@ -28,7 +28,7 @@ from mewcode.rsi.repo import (
     scan_and_record_frictions,
     synthesize_case_from_friction,
 )
-from mewcode.rsi.repo.case_synthesizer import git_head_commit
+from helix_harness.rsi.repo.case_synthesizer import git_head_commit
 from . import providers as web_providers
 from .coding import routes as coding_routes
 from .paths import APP_DATA

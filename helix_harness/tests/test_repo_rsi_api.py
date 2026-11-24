@@ -9,8 +9,8 @@ import subprocess
 from fastapi.testclient import TestClient
 import yaml
 
-from mewcode.rsi.default_optimizer import Edit
-from mewcode.rsi.repo import RepoRSIStore, apply_playbook_ops
+from helix_harness.rsi.default_optimizer import Edit
+from helix_harness.rsi.repo import RepoRSIStore, apply_playbook_ops
 
 
 def _init_demo_repo(repo_dir: Path) -> None:

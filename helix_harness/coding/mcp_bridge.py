@@ -6,10 +6,10 @@ import os
 import shutil
 import sys
 
-from mewcode.config import MCPServerConfig
-from mewcode.mcp.manager import MCPManager
-from mewcode.mcp.tool_wrapper import _build_params_model
-from mewcode.tools.base import Tool
+from mtcode.config import MCPServerConfig
+from mtcode.mcp.manager import MCPManager
+from mtcode.mcp.tool_wrapper import _build_params_model
+from mtcode.tools.base import Tool
 
 
 class ConnectionFailure(ValueError):

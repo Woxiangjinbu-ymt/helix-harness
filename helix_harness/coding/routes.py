@@ -293,7 +293,7 @@ def changes(sid: str, path: str | None = None):
 
 @router.get("/profiles")
 def all_profiles():
-    from mewcode.context.manager import compute_compact_threshold
+    from mtcode.context.manager import compute_compact_threshold
 
     return [
         dict(p, compact_threshold=compute_compact_threshold(p["context_window"]))

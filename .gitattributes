@@ -1,2 +1,4 @@
-# The evaluator hashes the original upstream file bytes across checkouts.
-vendor/rsi/** -text
+# Preserve byte-exact source and fixture digests across checkouts.
+vendor/mtcode-runtime/** -text
+helix_harness/rsi/** -text
+evaluation/** -text

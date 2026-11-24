@@ -1102,7 +1102,7 @@ def coding_extensions(page):
     import shutil
     import sys
 
-    from mewcode.mcp.tool_wrapper import build_mcp_tool_name
+    from mtcode.mcp.tool_wrapper import build_mcp_tool_name
     from helix_harness.tests.coding_fixture import finished, post, service, turn
 
     tool = build_mcp_tool_name("local-stamp", "stamp")

@@ -6,7 +6,7 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
-from mewcode.config import ProviderConfig, load_config
+from mtcode.config import ProviderConfig, load_config
 from .paths import PROVIDER_CONFIG
 from pathlib import Path
 

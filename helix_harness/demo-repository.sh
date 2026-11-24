@@ -10,7 +10,7 @@ if [ -e "$dest" ]; then
     exit 0
 fi
 mkdir "$dest"
-cp vendor/rsi/evaluation/repo-python-v1/public/page-settings/repo/*.py "$dest/"
+cp evaluation/repo-python-v1/public/page-settings/repo/*.py "$dest/"
 git -C "$dest" init -q --template=
 git -C "$dest" add -- app.py settings.py public_checks.py
 git -C "$dest" -c core.hooksPath=/dev/null -c user.name='RSI Demo' -c user.email='demo@localhost' -c commit.gpgSign=false commit -qm 'Public pagination example'

@@ -35,9 +35,9 @@ flowchart TB
 
 ### 两条执行路径
 
-**Coding Workspace。** 浏览器把任务提交给 Coding 会话管理器。管理器绑定仓库、会话和轮次，保存用户消息，按需启动该会话专属的本地进程。进程以用户选定的目录为工作目录，使用原生 `Agent.run()`、对话管理、工具、权限、Skills、MCP 与 Hooks。Web 适配器把 MewCode 事件交回管理器，并把用户对特定调用的授权送回原进程。管理器先持久化事件，再通过 SSE 发布。浏览器关闭只结束订阅，后台进程继续执行。现有 TUI 和远程入口均有可复用的装配逻辑，远程入口的 Agent、会话和当前目录属于同一服务实例，Web 在专属进程中建立这些对象。[原生执行循环](../../vendor/rsi/mewcode/agent.py) · [TUI 装配](../../vendor/rsi/mewcode/app.py) · [现有远程入口](../../vendor/rsi/mewcode/remote.py)
+**Coding Workspace。** 浏览器把任务提交给 Coding 会话管理器。管理器绑定仓库、会话和轮次，保存用户消息，按需启动该会话专属的本地进程。进程以用户选定的目录为工作目录，使用原生 `Agent.run()`、对话管理、工具、权限、Skills、MCP 与 Hooks。Web 适配器把 MewCode 事件交回管理器，并把用户对特定调用的授权送回原进程。管理器先持久化事件，再通过 SSE 发布。浏览器关闭只结束订阅，后台进程继续执行。现有 TUI 和远程入口均有可复用的装配逻辑，远程入口的 Agent、会话和当前目录属于同一服务实例，Web 在专属进程中建立这些对象。[原生执行循环](../../vendor/mtcode-runtime/mtcode/agent.py) · [TUI 装配](../../vendor/mtcode-runtime/mtcode/app.py) · [现有远程入口](../../vendor/mtcode-runtime/mtcode/remote.py)
 
-**RSI Center。** 实验编排器按冻结题集、被测配置和 Harness 快照调度单题运行。现有 `mewcode.rsi.runtime.MewCodeRuntime` 负责验证运行条件、准备临时工作区，在子进程中通过 `CellAgent` 调用同一个 `Agent.run()`。单题结束后封存公开轨迹与代码产物。Evaluator 读取封存产物并出具回执，Version Manager 根据评测证据处理版本决策。Coding 请求直接走普通会话路径，无需冻结题集、评分容器、实验数据库或演示模型服务。后端把这些设施的初始化归入 RSI 或显式选择的演示配置，使 RSI 启动失败时 Coding 入口仍可用。[评测适配器](../../vendor/rsi/mewcode/rsi/runtime.py) · [单题工作区](../../vendor/rsi/mewcode/rsi/workspace.py) · [实验编排](../../vendor/rsi/mewcode/rsi/orchestrator.py) · [现有 Web 启动逻辑](../../helix_harness/api.py)
+**RSI Center。** 实验编排器按冻结题集、被测配置和 Harness 快照调度单题运行。现有 `helix_harness.rsi.runtime.MTCodeRuntime` 负责验证运行条件、准备临时工作区，在子进程中通过 `CellAgent` 调用同一个 `Agent.run()`。单题结束后封存公开轨迹与代码产物。Evaluator 读取封存产物并出具回执，Version Manager 根据评测证据处理版本决策。Coding 请求直接走普通会话路径，无需冻结题集、评分容器、实验数据库或演示模型服务。后端把这些设施的初始化归入 RSI 或显式选择的演示配置，使 RSI 启动失败时 Coding 入口仍可用。[评测适配器](../../helix_harness/rsi/runtime.py) · [单题工作区](../../helix_harness/rsi/workspace.py) · [实验编排](../../helix_harness/rsi/orchestrator.py) · [现有 Web 启动逻辑](../../helix_harness/api.py)
 
 ### 状态归属
 
@@ -48,16 +48,16 @@ flowchart TB
 | 配置与凭据 | 会话选择自己的 Coding 配置。每轮开始固定实际 Provider、模型和权限配置，选用的新 Provider 从下一轮生效。依原生规则记录持续授权的适用范围。 | 实验固定 Benchmark、被测 Provider、预算及起始 Harness，每个单题绑定实际受测快照。优化器配置单独选择。活动版本变更只用于后续选择，既有运行继续使用其快照。 |
 | 存储与恢复 | 建议由仓库外的 Coding 专用存储持有 Web 会话索引、轮次、消息、原生压缩边界和可续读事件。复用 MewCode 的消息记录与压缩恢复语义，以同一份持久记录重建 UI 时间线和模型上下文。现有 CLI/TUI 会话继续按原格式恢复。 | Web 实验作业日志、引擎控制库、封存产物和只读历史归档沿用现有存储。评分真值取自 Evaluator 回执，活动版本仅由 Version Manager 写入。Web 页面从对应来源读取。 |
 
-原生 Agent 默认从工作目录推导会话记录和长工具输出的位置。Web 适配器需要将当前会话的记录视图与工具输出文件定位到仓库外的专属目录，使压缩及工具结果回读都指向同一会话。若服务重启时执行已丢失，会话管理器恢复已保存的消息和工具记录，将该轮标为中断。已发出但未记录结果的写操作标为结果未知，由用户查看 Diff 后决定下一步。[原生会话路径](../../vendor/rsi/mewcode/agent.py) · [会话与压缩恢复](../../vendor/rsi/mewcode/memory/session.py)
+原生 Agent 默认从工作目录推导会话记录和长工具输出的位置。Web 适配器需要将当前会话的记录视图与工具输出文件定位到仓库外的专属目录，使压缩及工具结果回读都指向同一会话。若服务重启时执行已丢失，会话管理器恢复已保存的消息和工具记录，将该轮标为中断。已发出但未记录结果的写操作标为结果未知，由用户查看 Diff 后决定下一步。[原生会话路径](../../vendor/mtcode-runtime/mtcode/agent.py) · [会话与压缩恢复](../../vendor/mtcode-runtime/mtcode/memory/session.py)
 
-服务端共用 Provider 配置解析、客户端工厂和凭据读取能力。两侧分别保存自己的选择，运行记录仅持有非秘密配置和凭据引用。调用模型所需的密钥通过私有通道交给对应客户端，工具、Shell 和测试进程使用清理过的环境。普通仓库、实验工作区和模型凭据存储分别设定可访问范围。[Provider 配置](../../vendor/rsi/mewcode/config.py) · [现有 RSI 存储](../../helix_harness/store.py)
+服务端共用 Provider 配置解析、客户端工厂和凭据读取能力。两侧分别保存自己的选择，运行记录仅持有非秘密配置和凭据引用。调用模型所需的密钥通过私有通道交给对应客户端，工具、Shell 和测试进程使用清理过的环境。普通仓库、实验工作区和模型凭据存储分别设定可访问范围。[Provider 配置](../../vendor/mtcode-runtime/mtcode/config.py) · [现有 RSI 存储](../../helix_harness/store.py)
 
 ### 两个明确的跨模块入口
 
 - **提交候选任务（F23）。** 用户从指定轮次选择起始代码、题面和可公开验证材料，预览后提交。RSI 保存独立候选副本。后续普通会话修改工作树时，候选内容仍以提交时的材料为准。
 - **选用已验证版本（F24）。** 用户在独立 Coding 配置中选定 RSI 已验证的 Harness，服务端解析并保存不可变快照引用及其可用内容。日常启动使用这个固定版本。RSI 后续晋升或主动回滚（F20）只更新该实验谱系的活动引用。
 
-这一拆分保留现有冻结基准。当前冻结校验将 MewCode 原生包的大部分文件及依赖锁纳入 Runtime 摘要。新增 Web 装配与会话管理优先放在 Web 层，直接复用原生组件。涉及冻结输入的变更须显式处理运行版本与历史兼容，旧实验始终保留原摘要和回执。[冻结输入定义](../../vendor/rsi/mewcode/rsi/fixtures.py) · [版本管理](../../vendor/rsi/mewcode/rsi/versions.py)
+这一拆分保留现有冻结基准。当前冻结校验将 MewCode 原生包的大部分文件及依赖锁纳入 Runtime 摘要。新增 Web 装配与会话管理优先放在 Web 层，直接复用原生组件。涉及冻结输入的变更须显式处理运行版本与历史兼容，旧实验始终保留原摘要和回执。[冻结输入定义](../../helix_harness/rsi/fixtures.py) · [版本管理](../../helix_harness/rsi/versions.py)
 
 ## 核心数据结构
 
@@ -87,7 +87,7 @@ flowchart TB
 | `cancelling` | `cancelled`、`interrupted` | 清理确认后标为已取消。执行丢失时记录中断，工作树写入权独立保留到确认安全释放。 |
 | `completed`、`failed`、`cancelled`、`interrupted` | 终态 | 同一事务提交一次终态及对应事件。后到的完成或取消请求只能读取已决定的结果。用户继续工作时创建新轮次。 |
 
-原生 `TurnComplete` 表示 Agent 内部一次迭代结束。会话管理器在整次执行返回并核对最后结果后，才提交 Web 轮次的终态。取消与完成同时到达时，按首次成功的条件状态更新裁决。若取消先获受理，后续只走清理路径。[原生事件定义](../../vendor/rsi/mewcode/agent.py)
+原生 `TurnComplete` 表示 Agent 内部一次迭代结束。会话管理器在整次执行返回并核对最后结果后，才提交 Web 轮次的终态。取消与完成同时到达时，按首次成功的条件状态更新裁决。若取消先获受理，后续只走清理路径。[原生事件定义](../../vendor/mtcode-runtime/mtcode/agent.py)
 
 ### 事件、授权与恢复
 
@@ -99,7 +99,7 @@ flowchart TB
 | 工具与授权 | 每个调用分配会话管理器可识别的 `call_id`，以 `(turn_id, call_id)` 关联请求、授权和结果，同时保留 Runtime 的工具 ID 与模型迭代位置。同名并行调用分别记录。授权事件另有一次性 `permission_id`，绑定本轮、调用和工作进程实例。原生权限请求只有工具名称、描述和等待对象，Web 适配器须在收到带工具 ID 的实际调用上下文中建立绑定。无法唯一关联时停止该调用。 |
 | 状态与执行证据 | 用户操作、状态迁移、命令输出、错误、用量和摘要均保留来源。有副作用的调用在派发前持久化执行意图，收到实际结果后追加结果事件。进程丢失而记录只有意图时，界面标为「执行结果未知」并提供 Diff。恢复只重建历史，新的执行需要新的用户操作。 |
 
-SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位置。重连时服务端按会话校验游标，依次补发后续已提交事件。失效游标触发历史重建，响应携带同一读取时点的最新序号，之后从该位置续读。断线期间待授权操作仍可从服务端查询。只有还在原进程中等待的请求可以答复，一旦取消或进程丢失，旧请求立即失效。权限答复、取消等操作按所属对象与请求 ID 登记处理结果，重送只返回既有结果。[原生会话记录与压缩边界](../../vendor/rsi/mewcode/memory/session.py) · [现有 Web 事件日志](../../helix_harness/store.py)
+SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位置。重连时服务端按会话校验游标，依次补发后续已提交事件。失效游标触发历史重建，响应携带同一读取时点的最新序号，之后从该位置续读。断线期间待授权操作仍可从服务端查询。只有还在原进程中等待的请求可以答复，一旦取消或进程丢失，旧请求立即失效。权限答复、取消等操作按所属对象与请求 ID 登记处理结果，重送只返回既有结果。[原生会话记录与压缩边界](../../vendor/mtcode-runtime/mtcode/memory/session.py) · [现有 Web 事件日志](../../helix_harness/store.py)
 
 ### 工作树写入权
 
@@ -117,7 +117,7 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 
 受理每轮时解析会话的 `profile_id`。相同规范内容可以复用快照，配置改动只影响之后受理的轮次。快照和所引用的非秘密内容至少保留到引用它的历史可查期结束。派发新调用前仍须检查凭据撤销和强制拒绝规则。运行记录保留原快照，并记录本次拒绝原因。用户做出的逐调用授权和持续授权决定另行记录其来源、生效范围与时间。
 
-**RSI 边界。** RSI 单题沿用 `EvalCell.cell_id`、`FrozenContext.run_fingerprint()` 与 `strategy_digest`。其 `session_id` 只标识被测运行，Coding 历史按自身业务域查找。显式选用 Harness 时，Coding 快照保存来源谱系、已接受的版本和内容摘要，并固定对应策略内容。RSI 晋升或回滚只更新可写谱系的活动引用。该引用另有单调修订号，变更时核对预期修订并原子写入新修订和决策记录，即使版本号回到旧值，过期请求也不能生效。[冻结条件与单题标识](../../vendor/rsi/mewcode/rsi/contracts.py) · [策略快照与活动版本](../../vendor/rsi/mewcode/rsi/versions.py)
+**RSI 边界。** RSI 单题沿用 `EvalCell.cell_id`、`FrozenContext.run_fingerprint()` 与 `strategy_digest`。其 `session_id` 只标识被测运行，Coding 历史按自身业务域查找。显式选用 Harness 时，Coding 快照保存来源谱系、已接受的版本和内容摘要，并固定对应策略内容。RSI 晋升或回滚只更新可写谱系的活动引用。该引用另有单调修订号，变更时核对预期修订并原子写入新修订和决策记录，即使版本号回到旧值，过期请求也不能生效。[冻结条件与单题标识](../../helix_harness/rsi/contracts.py) · [策略快照与活动版本](../../helix_harness/rsi/versions.py)
 
 ## Coding 模块接口与调用契约
 
@@ -155,11 +155,11 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 
 **1. 提交轮次。** 管理器核对工作目录，原子记录请求回执、用户消息、配置快照、轮次及受理事件，提交成功后调度工作进程。适配器按 `history_cursor` 恢复对话，其中已包含本次用户消息，只加入模型上下文一次。工作进程就绪后通过 `append_event` 报告接手，管理器确认仍为本轮指定实例，将状态由 `accepted` 改为 `running` 并应答。适配器此时才调用 `Agent.run()`。确认丢失只重送同一来源消息。若已接手的执行实例丢失，管理器保存中断状态，不在另一进程重放这一轮。原生单次模型迭代结束可以推进时间线，整轮完成须经 `finish_turn` 核定。（AC02、AC10、AC22）
 
-**2. 工具授权。** 适配器在原生执行分派取得 `ToolCallComplete` 时，将工具 ID、模型迭代位置和 Web `call_id` 放入该次调用的上下文，分别覆盖直接执行（含并行调用）和需询问的执行路径。原生权限检查返回拒绝时直接记录原因。返回询问时，适配器将本次调用与原生 `PermissionRequest.future` 绑定，向管理器登记授权，再等待答复。同名并行调用按 ID 配对。浏览器答复经管理器一次性记录，再送回原实例。适配器核对仍存活的绑定，只唤醒对应 Future 一次，并通过同一调用的交付事件确认。管理器据此让仍在等待的轮次回到 `running`，适配器收到确认后才派发该动作。交付应答丢失时只向原实例重送同一决定。已取消的轮次保持取消状态，拒绝反馈随有效的原生答复回到模型。若答复已落盘但实例丢失，保留决定并标明未确认执行。工具授权本身不授予工作树写入权。（AC04、AC05、AC22） [原生工具分派与授权](../../vendor/rsi/mewcode/agent.py)
+**2. 工具授权。** 适配器在原生执行分派取得 `ToolCallComplete` 时，将工具 ID、模型迭代位置和 Web `call_id` 放入该次调用的上下文，分别覆盖直接执行（含并行调用）和需询问的执行路径。原生权限检查返回拒绝时直接记录原因。返回询问时，适配器将本次调用与原生 `PermissionRequest.future` 绑定，向管理器登记授权，再等待答复。同名并行调用按 ID 配对。浏览器答复经管理器一次性记录，再送回原实例。适配器核对仍存活的绑定，只唤醒对应 Future 一次，并通过同一调用的交付事件确认。管理器据此让仍在等待的轮次回到 `running`，适配器收到确认后才派发该动作。交付应答丢失时只向原实例重送同一决定。已取消的轮次保持取消状态，拒绝反馈随有效的原生答复回到模型。若答复已落盘但实例丢失，保留决定并标明未确认执行。工具授权本身不授予工作树写入权。（AC04、AC05、AC22） [原生工具分派与授权](../../vendor/mtcode-runtime/mtcode/agent.py)
 
 **3. 取得和释放写入权。** 适配器在实际执行入口调用 `begin_action`。读操作校验轮次和访问范围，可能写入的动作还须具有适用授权并通过沙箱检查。管理器核验工作树身份、进程绑定、取消状态及当前代号，在同一事务中取得或复用本轮写入权并记录执行意图，提交后返回许可。被其他轮次占用时返回占用会话，适配器向原生调用返回可重试的冲突结果。适配器在工具入口重新核对当前策略、强制拒绝、取消状态、目标与已读文件版本。若当前策略要求询问且缺少绑定本次调用的有效答复，先结束本次未派发的动作并归还其写入权，再询问用户。获得有效答复后以新的动作 ID 重新申请。每份许可只供一次派发。应答丢失可凭原 `action_id` 取回已记录的结果或核验仍有效的许可，已消费、已释放或已撤销的许可均不能再次启动动作。若已发出许可而失去执行证据，留下结果未知及可检查的 Diff。
 
-实际入口包括默认文件工具、Shell、扩展调用、Hook 动作和持续授权规则写入。原生前置 Hook 可以早于主工具的授权询问运行，因此可能写入的 Hook 必须按自身已配置的权限单独申请许可。持续授权只有在原生规则成功保存后才显示已生效。由适配器根据实际执行入口与参数判定读写性质，难以证明只读的动作按可能写入处理。`end_action` 以动作 ID 幂等记录实际结果。Runtime 随后报告的工具结果按同一 `call_id` 归入一张卡片，规则保存、输出和清理各自保留证据。若结果先于清理完成，管理器继续监督，在核对本代所有动作及可写子进程均已结束后才释放。只收到工具输出或父进程退出时，仍保持占用。旧代释放请求无法影响新持有者。（AC06、AC07、AC10） [Hook 执行](../../vendor/rsi/mewcode/hooks/engine.py) · [本地权限规则](../../vendor/rsi/mewcode/permissions/rules.py) · [Shell 工具](../../vendor/rsi/mewcode/tools/bash.py)
+实际入口包括默认文件工具、Shell、扩展调用、Hook 动作和持续授权规则写入。原生前置 Hook 可以早于主工具的授权询问运行，因此可能写入的 Hook 必须按自身已配置的权限单独申请许可。持续授权只有在原生规则成功保存后才显示已生效。由适配器根据实际执行入口与参数判定读写性质，难以证明只读的动作按可能写入处理。`end_action` 以动作 ID 幂等记录实际结果。Runtime 随后报告的工具结果按同一 `call_id` 归入一张卡片，规则保存、输出和清理各自保留证据。若结果先于清理完成，管理器继续监督，在核对本代所有动作及可写子进程均已结束后才释放。只收到工具输出或父进程退出时，仍保持占用。旧代释放请求无法影响新持有者。（AC06、AC07、AC10） [Hook 执行](../../vendor/mtcode-runtime/mtcode/hooks/engine.py) · [本地权限规则](../../vendor/mtcode-runtime/mtcode/permissions/rules.py) · [Shell 工具](../../vendor/mtcode-runtime/mtcode/tools/bash.py)
 
 **4. 取消。** 管理器用条件状态更新裁决完成与取消的竞争。取消先受理时，在同一事务中记录 `cancelling`、使待授权请求失效并关闭新动作派发，随后向绑定实例发送 `stop_turn`。尚未启动的轮次撤销调度，核对没有所属执行资源后即可结束。已发出许可的动作纳入本轮清理，适配器丢弃尚未使用的许可、停止原生循环、关闭授权等待并回收本轮子进程。管理器核对受管进程及后代的清理证据。适配器无响应时，管理器负责终止本轮拥有的执行并重新核验。清理超时显示阻塞原因，工作树进入 `draining`。正常清理完成才发布 `cancelled`。执行实例意外丢失可记为 `interrupted`，写入权仍按清理证据释放。若完成先提交，取消读取既定终态。关闭浏览器连接不触发此接口。（AC07、AC10、AC13、AC19、AC22）
 
@@ -175,7 +175,7 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 | Evaluator | 接收服务端构造的 `ScoreRequest`，在独立进程中核验冻结发布、单题身份、轨迹和封存产物，再运行私测。 | 对应该单题的公开评分回执，或带原因的评分失败。私测输入和逐项审计证据留在评分端。 |
 | Version Manager | 管理同一谱系的策略快照，登记候选，核验比较条件和完整评分矩阵，提交接受、拒绝或主动回滚。 | 不可变快照、正式榜、尝试记录、带修订号的活动引用及其变更历史。只有这个模块可以移动活动引用。 |
 
-`lineage_id` 在服务端绑定现有的研究目录标识和正式基线 ID。一个 `HarnessRef` 必须包含 `lineage_id, version, strategy_digest`。其中版本号只在本谱系内有效，摘要校验具体内容。`HeadRef` 在此基础上增加 `revision`，每次活动指针实际移动便递增。实验 ID 标识一次调度，`EvalCell.cell_id` 标识计划内的一题一次运行，普通 Coding 轮次 ID 仅在用户提交候选时作为来源。浏览器只提交资源标识，目录、凭据和评分请求均由服务端解析。[单题身份](../../vendor/rsi/mewcode/rsi/contracts.py) · [现有版本查询](../../helix_harness/catalog.py)
+`lineage_id` 在服务端绑定现有的研究目录标识和正式基线 ID。一个 `HarnessRef` 必须包含 `lineage_id, version, strategy_digest`。其中版本号只在本谱系内有效，摘要校验具体内容。`HeadRef` 在此基础上增加 `revision`，每次活动指针实际移动便递增。实验 ID 标识一次调度，`EvalCell.cell_id` 标识计划内的一题一次运行，普通 Coding 轮次 ID 仅在用户提交候选时作为来源。浏览器只提交资源标识，目录、凭据和评分请求均由服务端解析。[单题身份](../../helix_harness/rsi/contracts.py) · [现有版本查询](../../helix_harness/catalog.py)
 
 ### 评测与版本晋升
 
@@ -188,16 +188,16 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 | Web → 编排器，`POST /api/rsi/evaluations/{evaluation_id}/cells/{cell_id}/rescore` | `request_id`，服务端定位同一封存产物、原回执与对应的冻结裁判。 | 受理后返回复算作业 ID。编排器重新向 Evaluator 请求评分，逐字段对比后将一致或不一致结果挂到该作业。原回执保留，复算不重新调用模型，也不改变版本。 |
 | 编排器 → Version Manager，`stage(session_id, reference, proposal, round_index)`、`finish(session_id, version)` | 沿用引擎入口。登记候选时附存父版本的策略摘要和受理时的活动修订，验证计划固定候选快照、被测条件和样本矩阵。 | `stage` 返回待验证候选。`finish` 返回已提交的接受或拒绝报告，或返回证据缺失、引用冲突等失败。对已决候选重试读取原报告。 |
 
-**评测。** 每项计划固定题集版本、被测模型、预算和 Harness。进化还固定优化器配置。新建谱系先核验完整正式基线，再登记初始活动版本。运行中的单题持续使用其固定快照。恢复时，已保存的回执先校验再复用，有封存产物的单题可继续评分，未开始的单题可按原计划执行。已登记却缺少可信产物的单题保留现场及失败原因。公开示例单独显示公开测试结果。成功率与样本数从同一批运行汇总，费用或 Token 无来源时显示未记录。（AC14、AC15、AC18、AC19、AC25） [评分请求与回执](../../vendor/rsi/mewcode/rsi/evaluator.py) · [矩阵核验](../../vendor/rsi/mewcode/rsi/matrix.py)
+**评测。** 每项计划固定题集版本、被测模型、预算和 Harness。进化还固定优化器配置。新建谱系先核验完整正式基线，再登记初始活动版本。运行中的单题持续使用其固定快照。恢复时，已保存的回执先校验再复用，有封存产物的单题可继续评分，未开始的单题可按原计划执行。已登记却缺少可信产物的单题保留现场及失败原因。公开示例单独显示公开测试结果。成功率与样本数从同一批运行汇总，费用或 Token 无来源时显示未记录。（AC14、AC15、AC18、AC19、AC25） [评分请求与回执](../../helix_harness/rsi/evaluator.py) · [矩阵核验](../../helix_harness/rsi/matrix.py)
 
-**晋升。** 编排器把公开题面、失败观测及对应轨迹位置提供给既有优化器。Version Manager 校验提案的父版本、证据及 Prompt、inline Skills、Workflow 修改范围，封存候选。正式比较先对每题的运行取平均，再对各题等权平均。矩阵完整、冻结条件一致且候选均分严格提高时接受，平分或退步时拒绝。缺样本、私测设施故障或证据失配时报告验证未完成，已有成绩和活动引用仍可查。接受事务按候选记录的父版本和预期修订进行条件更新，同时提交候选决定、榜项、活动版本和新修订，拒绝事务仅记录本次尝试及其报告。页面显示的决定应能追到同一份持久报告。（AC16、AC27） [候选验证与编排](../../vendor/rsi/mewcode/rsi/orchestrator.py) · [引擎决策事务](../../vendor/rsi/mewcode/rsi/versions.py)
+**晋升。** 编排器把公开题面、失败观测及对应轨迹位置提供给既有优化器。Version Manager 校验提案的父版本、证据及 Prompt、inline Skills、Workflow 修改范围，封存候选。正式比较先对每题的运行取平均，再对各题等权平均。矩阵完整、冻结条件一致且候选均分严格提高时接受，平分或退步时拒绝。缺样本、私测设施故障或证据失配时报告验证未完成，已有成绩和活动引用仍可查。接受事务按候选记录的父版本和预期修订进行条件更新，同时提交候选决定、榜项、活动版本和新修订，拒绝事务仅记录本次尝试及其报告。页面显示的决定应能追到同一份持久报告。（AC16、AC27） [候选验证与编排](../../helix_harness/rsi/orchestrator.py) · [引擎决策事务](../../helix_harness/rsi/versions.py)
 
 ### 主动回滚
 
 1. **读取与提交。** 版本页读取当前 `HeadRef`、目标 `HarnessRef` 及两者差异，向操作者显示源版本与目标版本。确认后调用 `POST /api/rsi/lineages/{lineage_id}/rollbacks`，提交 `request_id, expected_head, target_ref`。服务端验证本机写操作权限与该谱系的可写属性，然后将请求交给 `VersionManager.rollback(lineage_id, expected_head, target_ref, request_id)`。现有旧回滚路由只在具备同样的请求字段和授权时委托此操作，缺少预期引用的旧请求继续返回冲突。
 2. **校验与原子提交。** Version Manager 在该谱系控制库的同一写事务中先查请求回执。同 ID 同载荷返回原决定，即使之后活动引用再次改变。同 ID 不同载荷返回 409。新请求校验活动版本、摘要、修订及目标快照完整性。目标须为本谱系此前已经验证并进入正式榜的版本，包含经完整评测登记的初始基线。只读归档、其他谱系或未获接受的候选均不可作为该次写入目标。目标已是当前活动版本时返回当前引用及“已生效”，不产生第二次变更。
 3. **结果与冲突。** 成功返回 `decision_id, from_ref, to_ref, revision, decided_at`。活动引用更新、修订递增、追加回滚记录和幂等回执一并提交。前后版本快照、原评分及原接受记录继续可查。两个请求依据同一旧修订竞争移动指针，至多一个成功，冲突方收到 409 及最新 `HeadRef`。若进程在提交后、应答前退出，重试能找回同一决定。
-4. **在途实验与历史。** 一个实验已固定的单题仍可按原快照执行或评分。若外部回滚改变了父引用，其证据仍可查，候选发布返回 `reference_changed`，不会覆盖新活动版本。为此应将现有逐题执行与回执保存对活动头的检查，改为校验本题固定计划，把活动修订检查保留在谱系变更边界。读取历史时按活动指针定位版本，正式榜保留历次接受项，包括回滚后版本号较大的项。旧事件 `rollback_completed` 若来自候选拒绝，展示为“保留父版本”。操作员发起的主动回滚使用独立决定类型。旧归档按原格式只读解释，修订与新决策记录仅添加到可写控制库。首次升级可写控制库时，从现存活动头初始化修订。读取旧归档使用只读查询，不调用会建表或封存文件的写入口。（AC17、AC21、AC22、AC26） [当前历史读取与拒绝通知](../../vendor/rsi/mewcode/rsi/orchestrator.py) · [当前 Web 回滚入口](../../helix_harness/api.py)
+4. **在途实验与历史。** 一个实验已固定的单题仍可按原快照执行或评分。若外部回滚改变了父引用，其证据仍可查，候选发布返回 `reference_changed`，不会覆盖新活动版本。为此应将现有逐题执行与回执保存对活动头的检查，改为校验本题固定计划，把活动修订检查保留在谱系变更边界。读取历史时按活动指针定位版本，正式榜保留历次接受项，包括回滚后版本号较大的项。旧事件 `rollback_completed` 若来自候选拒绝，展示为“保留父版本”。操作员发起的主动回滚使用独立决定类型。旧归档按原格式只读解释，修订与新决策记录仅添加到可写控制库。首次升级可写控制库时，从现存活动头初始化修订。读取旧归档使用只读查询，不调用会建表或封存文件的写入口。（AC17、AC21、AC22、AC26） [当前历史读取与拒绝通知](../../helix_harness/rsi/orchestrator.py) · [当前 Web 回滚入口](../../helix_harness/api.py)
 
 ### 跨模块入口一 · 提交 Benchmark 候选（F23）
 
@@ -214,7 +214,7 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 1. **解析。** RSI 提供只读接口 `resolve_verified_harness(harness_ref) → manifest, bundle`。按指定谱系和版本核验正式基线或接受记录、关联评测证据及快照内容摘要，然后返回 Prompt、inline Skills 和 Workflow 的清单与可校验内容。一个历史已接受版本即使已退出活动位置，也可显式选取。历史资料不足以验证时仍允许查看原记录，选用操作返回原因。
 2. **用于评测。** 研究者在 `POST /api/rsi/experiments` 中传入明确的 `harness_ref` 及独立被测配置。编排器在受理时解析并固定两者，启动记录展示实际版本、策略摘要、Provider 和模型。后续谱系变化不会改变已安排单题的输入。
 3. **用于 Coding。** 操作者在指定的独立 Coding 配置中调用 `POST /api/coding/profiles/{profile_id}/harness`，提交 `request_id, expected_profile_revision, harness_ref`。Coding 从只读接口取回并校验策略包，先保存到仓库外的 Coding 内容存储，再以一次事务更新该配置的引用、修订与请求回执。返回 `profile_id, profile_revision, harness_ref`。下一次使用此配置创建轮次时，将固定引用写入 `CodingConfigSnapshot`。策略包仅提供已验证的行为材料，工具权限、模型凭据、沙箱及 MCP 服务仍由 Coding 配置决定。
-4. **失败与重试。** 校验操作者对目标配置的写权限后，先按配置与请求 ID 查询既有回执，同载荷直接返回。不同载荷返回 409。新请求才解析源版本和检查预期修订。本地内容不完整、源摘要不符、源不可验证或配置修订冲突时，保留原绑定并说明原因。首次选用完成后，普通会话可直接读取本地副本，即使 RSI 停用也能启动。使用其他配置的会话和已开始的轮次继续使用各自的固定快照。（AC19、AC21、AC24、AC27） [策略装配与内容校验](../../vendor/rsi/mewcode/rsi/strategy.py) · [快照封存与读取](../../vendor/rsi/mewcode/rsi/versions.py)
+4. **失败与重试。** 校验操作者对目标配置的写权限后，先按配置与请求 ID 查询既有回执，同载荷直接返回。不同载荷返回 409。新请求才解析源版本和检查预期修订。本地内容不完整、源摘要不符、源不可验证或配置修订冲突时，保留原绑定并说明原因。首次选用完成后，普通会话可直接读取本地副本，即使 RSI 停用也能启动。使用其他配置的会话和已开始的轮次继续使用各自的固定快照。（AC19、AC21、AC24、AC27） [策略装配与内容校验](../../helix_harness/rsi/strategy.py) · [快照封存与读取](../../helix_harness/rsi/versions.py)
 
 ## 文件组织与五阶段实施安排
 
@@ -229,10 +229,10 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 | 仓库与执行 | 新增 `helix_harness/coding/worktrees.py`、`worker.py`、`runtime_adapter.py`、`actions.py`（后三项同目录） | 仓库模块登记实际工作树并提供文件浏览、搜索、读取和 Git Diff。worker 管理私有通道与会话进程。适配器使用原生 Agent、会话编解码及压缩记录。动作执行前由 `actions.py` 向管理器申领许可，跟踪写操作和受管子进程，回报清理结果。 |
 | Provider 与配置 | 新增 `helix_harness/providers.py`、`helix_harness/coding/profiles.py`，调整 `helix_harness/mock.py` | 共享模块复用 MewCode 的 Provider 解析和客户端工厂。Coding 模块保存非秘密配置版本、服务端凭据引用及已选扩展。演示 Provider 由现有 Mock 服务显式提供。真实 Provider 错误须返回对应会话。 |
 | Coding 前端 | 调整 `helix_harness/frontend/src/main.tsx`，新增同一源码目录下的 `pages/CodingWorkspace.tsx`、`pages/CodingSettings.tsx`、`lib/coding.ts`、`components/CodingTimeline.tsx` | 默认路由和新会话入口打开 Coding 工作台。专用客户端负责会话视图、授权提交和游标续读，时间线按真实调用配对。复用现有 `components/CodeViewer.tsx`、`DiffViewer.tsx` 和主题样式，补齐现有中英文文案。 |
-| RSI Web 与引擎 | 在新模块 `helix_harness/rsi_api.py` 接入评测与版本操作，调整 `helix_harness/worker.py`、`helix_harness/catalog.py`、`mewcode/rsi/versions.py`、`mewcode/rsi/orchestrator.py` | Web 层解析资源标识、调度作业并读取结果。Version Manager 持有可写谱系的修订、决策事务和回滚。编排器固定单题输入并保留在途回执。沿用 `mewcode/rsi/evaluator.py`、`matrix.py`、`runtime.py`、`strategy.py` 的评分、核验、执行与策略装配。 |
+| RSI Web 与引擎 | 在新模块 `helix_harness/rsi_api.py` 接入评测与版本操作，调整 `helix_harness/worker.py`、`helix_harness/catalog.py`、`helix_harness/rsi/versions.py`、`helix_harness/rsi/orchestrator.py` | Web 层解析资源标识、调度作业并读取结果。Version Manager 持有可写谱系的修订、决策事务和回滚。编排器固定单题输入并保留在途回执。沿用 `helix_harness/rsi/evaluator.py`、`matrix.py`、`runtime.py`、`strategy.py` 的评分、核验、执行与策略装配。 |
 | RSI 前端 | 调整 `helix_harness/frontend/src/pages/` 下现有 `Dashboard.tsx`、`Evaluations.tsx`、`Evolution.tsx`、`Versions.tsx`、`Workspace.tsx`，新增同目录 `Benchmarks.tsx` | 页面组成 RSI Center，提供题集选择、轨迹、评测、版本差异和回滚确认。原有 `Workspace.tsx` 承接单题实验。旧链接 `#workspace/<job_id>` 继续定位对应 RSI 作业，普通会话使用单独的 `#coding/<session_id>`。原有 `lib/workspaceContext.tsx` 的公开题仓库选择仅用于 RSI 页面。 |
 | 两个跨模块入口 | 新增 `helix_harness/coding/exports.py`、`helix_harness/candidates.py`、`helix_harness/exchange.py` | Coding 导出模块持有起始材料和不可变预览，RSI 候选模块负责封存及幂等入库。应用入口把两端需要的只读接口交给 `exchange.py`，由其协调候选提交及 Harness 选用。各端仍自行提交本域事务。普通轮次直接读取 Coding 的本地快照。 |
-| 验证入口 | 扩展 `helix_harness/tests/api_smoke.py`、`browser.py`、`recovery.py`（后两项同目录）和 `tests/rsi/test_day4.py`。新增 `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py` | 保留现有单题、Mock、真实模型及归档测试。新增用例覆盖会话与写入权竞争、丢失应答后的重试、跨库提交及配置隔离。浏览器验收分别使用日常 Coding 与 RSI 入口。 |
+| 验证入口 | 扩展 `helix_harness/tests/api_smoke.py`、`browser.py`、`recovery.py`（后两项同目录）和 `helix_harness/tests/rsi/test_day4.py`。新增 `helix_harness/tests/test_coding_lifecycle.py`、`helix_harness/tests/test_exchange.py` | 保留现有单题、Mock、真实模型及归档测试。新增用例覆盖会话与写入权竞争、丢失应答后的重试、跨库提交及配置隔离。浏览器验收分别使用日常 Coding 与 RSI 入口。 |
 
 日常操作按资源归属接入。Coding 仓库接口返回目录身份、选定目录下的文件及差异。会话接口支持按仓库创建、列出和恢复会话，再进入已确认的轮次和事件接口。设置页从服务端获取脱敏配置，修改 Provider 或扩展后显示生效的配置版本。实验目录、公开示例、评分回执和活动版本由 RSI 查询接口提供。浏览器打开旧任务链接时按路由类型查找，防止把历史作业 ID 用到普通会话接口。
 
@@ -246,6 +246,6 @@ SSE 游标编码为 `session_id/seq`，客户端只保存最后已应用的位�
 | 4 · 两侧协同 | 复用 Coding 轮次记录和 RSI 已验证的版本快照。先在轮次执行前捕获起始材料，接入预览与 RSI 候选入库，再接入显式选择被测配置及为指定 Coding 配置绑定 Harness（F22–F24）。 | 预览后修改普通工作树，再提交同一请求两次，RSI 只有一个与预览一致的候选。选用 Harness 后关闭 RSI，指定 Coding 配置仍可工作，其他会话保持原快照。完成 AC19–AC21，并覆盖 AC22–AC24 的跨模块情形。 |
 | 5 · 完整回归 | 使用独立数据目录和既有归档的副本进行前后对照。贯穿前四阶段验证 N1–N13，对 AC01–AC27 逐项保留实测依据。 | 运行前端类型检查与构建、后端及 RSI 测试、浏览器端到端、故障恢复和原生 CLI/TUI 回归。按 AC27 用真实模型完成并保存一次多轮编程，再进入 RSI 运行进化、核对成绩与 Diff，最后返回原会话。通过情况、来源与缺失证据分别记录。 |
 
-前端沿用 `npm --prefix helix_harness/frontend run build` 完成类型检查和构建，原生及 RSI 用例通过 `.venv/bin/python -B -m pytest -q vendor/rsi/tests` 运行。新增 Web 单测以对应测试文件显式运行。实服务验证使用 `helix_harness/tests/` 下的 API、浏览器和恢复脚本，原生 TUI 按项目约定在 tmux 中验证。现有浏览器脚本的 `real` 场景使用 RSI 单题入口，Phase 2 和 Phase 5 另走普通 Coding 会话完成真实模型验收。[现有验收入口](../../helix_harness/README.md) · [原生测试约定](../../vendor/rsi/AGENT.md)
+前端沿用 `npm --prefix helix_harness/frontend run build` 完成类型检查和构建，原生及 RSI 用例通过 `.venv/bin/python -B -m pytest -q vendor/mtcode-runtime/tests helix_harness/tests/rsi` 运行。新增 Web 单测以对应测试文件显式运行。实服务验证使用 `helix_harness/tests/` 下的 API、浏览器和恢复脚本，原生 TUI 按项目约定在 tmux 中验证。现有浏览器脚本的 `real` 场景使用 RSI 单题入口，Phase 2 和 Phase 5 另走普通 Coding 会话完成真实模型验收。[现有验收入口](../../helix_harness/README.md) · [原生测试约定](../../vendor/mtcode-runtime/AGENT.md)
 
-每阶段完成后更新 `task.md` 和 `checklist.md`，记录交付功能、修改文件、架构变化、实际测试结果、真实模型运行证据、遗留问题及下一阶段安排。涉及冻结输入时核对原发布摘要。对既有归档的兼容性结论来自升级前后同一批证据的比对。[冻结输入](../../vendor/rsi/mewcode/rsi/fixtures.py) · [评分发布校验](../../vendor/rsi/mewcode/rsi/evaluator.py)
+每阶段完成后更新 `task.md` 和 `checklist.md`，记录交付功能、修改文件、架构变化、实际测试结果、真实模型运行证据、遗留问题及下一阶段安排。涉及冻结输入时核对原发布摘要。对既有归档的兼容性结论来自升级前后同一批证据的比对。[冻结输入](../../helix_harness/rsi/fixtures.py) · [评分发布校验](../../helix_harness/rsi/evaluator.py)

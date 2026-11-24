@@ -354,7 +354,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "mewcode" },
+    { name = "mtcode" },
     { name = "pillow" },
     { name = "uvicorn" },
 ]
@@ -370,7 +370,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.165.0" },
-    { name = "mewcode", editable = "vendor/rsi" },
+    { name = "mtcode", editable = "vendor/mtcode-runtime" },
     { name = "pillow", specifier = ">=11" },
     { name = "uvicorn", specifier = "==0.46.0" },
 ]
@@ -679,9 +679,9 @@ wheels = [
 ]
 
 [[package]]
-name = "mewcode"
+name = "mtcode"
 version = "0.2.0"
-source = { editable = "vendor/rsi" }
+source = { editable = "vendor/mtcode-runtime" }
 dependencies = [
     { name = "anthropic" },
     { name = "httpx", extra = ["socks"] },

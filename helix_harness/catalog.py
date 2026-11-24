@@ -5,9 +5,9 @@ from difflib import unified_diff
 import json
 from pathlib import Path
 
-from mewcode.rsi.contracts import digest
-from mewcode.rsi.fixtures import BENCHMARK, regular_files, tree_digest, file_digest
-from mewcode.rsi.failure_analysis import FailureAnalyzer
+from helix_harness.rsi.contracts import digest
+from helix_harness.rsi.fixtures import BENCHMARK, regular_files, tree_digest, file_digest
+from helix_harness.rsi.failure_analysis import FailureAnalyzer
 from .store import DEFAULT, PUBLIC, ROOT, db, jobs, sources, read, rows
 
 
@@ -424,8 +424,8 @@ def comparison(a, b, ts):
 
 
 def findings(version, tasks):
-    from mewcode.rsi.matrix import requests, observe, stored_receipts
-    from mewcode.rsi.baseline import db_open
+    from helix_harness.rsi.matrix import requests, observe, stored_receipts
+    from helix_harness.rsi.baseline import db_open
     from contextlib import closing
 
     state = sources()[version["study"]][0]

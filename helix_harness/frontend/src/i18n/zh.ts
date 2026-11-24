@@ -71,7 +71,7 @@ export const zh: Messages = {
     projectsGroup: "代码仓库",
     noSessionsYet: "暂无会话",
     localWorkspace: "本地工作台",
-    runtimeName: "MewCode 运行时",
+    runtimeName: "MTCode 运行时",
     crumbWorkspace: "工作空间",
   },
   nav: {
@@ -164,7 +164,7 @@ export const zh: Messages = {
     repoPreviewHint: "点击文件可直接预览源码",
     composerTitle: "发起一次仓库编码任务",
     composerSubtitle:
-      "在独立的 Git 工作树中运行 MewCode Agent，完成后由只读 Docker 裁判独立评分。",
+      "在独立的 Git 工作树中运行 MTCode Agent，完成后由只读 Docker 裁判独立评分。",
     taskInstructions: "任务指令",
     taskInstructionsPlaceholder: "描述需要修改的代码逻辑、约束或边界条件…",
     useBenchmarkTask: "载入基准题面",
